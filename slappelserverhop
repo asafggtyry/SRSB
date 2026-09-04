@@ -1,0 +1,312 @@
+--[[
+    Auto Glove Teleporter + Smart Server Hop (Slap Battles)
+    - Teleports to Teleport1 → island5
+    - Teleports to every Glove part inside Slapples
+    - After all existing Gloves are visited, waits 2s then auto‑hops to a new server
+    - GUI reappears automatically in the new server
+]]
+
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+
+-- ===== CONFIGURATION =====
+local LOBBY_NAME = "Lobby"
+local TELEPORT_PART_NAME = "Teleport1"
+local ARENA_NAME = "Arena"
+local ISLAND_NAME = "island5"
+local SLAPPLE_FOLDER_NAME = "Slapples"
+local TARGET_PART_NAME = "Glove"
+
+local TELEPORT_OFFSET = Vector3.new(0, 3, 0)
+local PORTAL_WAIT_TIME = 2.5
+local AUTO_HOP_DELAY = 2   -- seconds to wait after visiting all gloves before hopping
+
+-- ===== STATE =====
+local isRunning = false
+local visitedParts = {}
+local loopThread = nil
+
+-- ===== CLEAN UP OLD GUI =====
+local oldGui = player.PlayerGui:FindFirstChild("GloveTeleporterGUI")
+if oldGui then oldGui:Destroy() end
+
+-- ===== GUI CREATION =====
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "GloveTeleporterGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 320, 0, 130)
+frame.Position = UDim2.new(0.5, -160, 0.5, -65)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "Auto Glove Teleporter"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 16
+title.Parent = frame
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0, 25)
+statusLabel.Position = UDim2.new(0, 0, 0, 30)
+statusLabel.Text = "Status: Idle"
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextSize = 14
+statusLabel.Parent = frame
+
+-- Buttons
+local buttonY = 65
+local buttonHeight = 30
+local spacing = 5
+
+local startButton = Instance.new("TextButton")
+startButton.Size = UDim2.new(0, 90, 0, buttonHeight)
+startButton.Position = UDim2.new(0, 10, 0, buttonY)
+startButton.Text = "Start"
+startButton.BackgroundColor3 = Color3.fromRGB(40, 160, 40)
+startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+startButton.Font = Enum.Font.SourceSansBold
+startButton.TextSize = 16
+startButton.Parent = frame
+
+local stopButton = Instance.new("TextButton")
+stopButton.Size = UDim2.new(0, 90, 0, buttonHeight)
+stopButton.Position = UDim2.new(0, 10 + 90 + spacing, 0, buttonY)
+stopButton.Text = "Stop"
+stopButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stopButton.Font = Enum.Font.SourceSansBold
+stopButton.TextSize = 16
+stopButton.Parent = frame
+
+local hopButton = Instance.new("TextButton")
+hopButton.Size = UDim2.new(0, 100, 0, buttonHeight)
+hopButton.Position = UDim2.new(0, 10 + 90 + spacing + 90 + spacing, 0, buttonY)
+hopButton.Text = "Hop Server"
+hopButton.BackgroundColor3 = Color3.fromRGB(40, 80, 180)
+hopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hopButton.Font = Enum.Font.SourceSansBold
+hopButton.TextSize = 14
+hopButton.Parent = frame
+
+-- ===== HELPERS =====
+local function getCharacterRoot()
+    local char = player.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function teleportToPart(part)
+    if not part or not part:IsA("BasePart") then return false end
+    local root = getCharacterRoot()
+    if not root then return false end
+    root.CFrame = part.CFrame + TELEPORT_OFFSET
+    return true
+end
+
+-- Recursive search for BaseParts with a given name
+local function findAllPartsByName(container, name)
+    local results = {}
+    local function search(instance)
+        for _, child in ipairs(instance:GetChildren()) do
+            if child:IsA("BasePart") and child.Name == name then
+                table.insert(results, child)
+            end
+            if child:IsA("Folder") or child:IsA("Model") then
+                search(child)
+            end
+        end
+    end
+    search(container)
+    return results
+end
+
+-- ===== SERVER HOP =====
+local function serverHop()
+    if isRunning then
+        isRunning = false
+        statusLabel.Text = "Stopping & hopping..."
+        task.wait(0.5)
+    end
+
+    statusLabel.Text = "Searching for servers..."
+    local placeId = game.PlaceId
+    local currentJobId = game.JobId
+    local cursor = ""
+    local candidateServers = {}
+
+    while true do
+        local url = string.format(
+            "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100%s",
+            placeId,
+            cursor ~= "" and ("&cursor=" .. cursor) or ""
+        )
+
+        local success, response = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if success and response then
+            local data = HttpService:JSONDecode(response)
+            if data and data.data then
+                for _, server in ipairs(data.data) do
+                    if server.id ~= currentJobId 
+                       and server.playing < server.maxPlayers 
+                       and server.playing > 0 then
+                        table.insert(candidateServers, server)
+                    end
+                end
+                if #candidateServers >= 5 or not data.nextPageCursor then
+                    break
+                else
+                    cursor = data.nextPageCursor
+                end
+            else
+                break
+            end
+        else
+            break
+        end
+    end
+
+    if #candidateServers > 0 then
+        statusLabel.Text = "Hopping to new server..."
+        local chosenServer = candidateServers[math.random(1, #candidateServers)]
+        TeleportService:TeleportToPlaceInstance(placeId, chosenServer.id, player)
+    else
+        statusLabel.Text = "Fallback hopping..."
+        TeleportService:Teleport(placeId, player)
+    end
+end
+
+-- ===== MAIN LOOP (now auto‑hops when done) =====
+local function runLoop()
+    -- Step 1: Teleport to Teleport1 in Lobby
+    local lobby = workspace:FindFirstChild(LOBBY_NAME)
+    if not lobby then
+        statusLabel.Text = "Error: Lobby not found!"
+        isRunning = false
+        return
+    end
+
+    local teleportPart = lobby:FindFirstChild(TELEPORT_PART_NAME)
+    if not teleportPart or not teleportPart:IsA("BasePart") then
+        statusLabel.Text = "Error: Teleport1 not found!"
+        isRunning = false
+        return
+    end
+
+    statusLabel.Text = "Going to Teleport1..."
+    teleportToPart(teleportPart)
+    task.wait(PORTAL_WAIT_TIME)
+
+    -- Step 2: Find Arena > island5 > Slapples
+    local arena = workspace:FindFirstChild(ARENA_NAME)
+    if not arena then
+        statusLabel.Text = "Error: Arena not found!"
+        isRunning = false
+        return
+    end
+
+    local island = arena:FindFirstChild(ISLAND_NAME)
+    if not island then
+        statusLabel.Text = "Error: island5 not found in Arena!"
+        isRunning = false
+        return
+    end
+
+    local slappleFolder = island:FindFirstChild(SLAPPLE_FOLDER_NAME)
+    if not slappleFolder or not slappleFolder:IsA("Folder") then
+        statusLabel.Text = "Error: Slapples folder not found!"
+        isRunning = false
+        return
+    end
+
+    statusLabel.Text = "Scanning for Gloves..."
+    visitedParts = {}
+
+    -- Step 3: Collect all current Gloves and teleport to each
+    local gloves = findAllPartsByName(slappleFolder, TARGET_PART_NAME)
+    if #gloves == 0 then
+        statusLabel.Text = "No Gloves found. Auto‑hopping..."
+        task.wait(1)
+        serverHop()
+        return
+    end
+
+    statusLabel.Text = "Found " .. #gloves .. " Glove(s). Teleporting..."
+    for _, part in ipairs(gloves) do
+        if not isRunning then break end
+        if not visitedParts[part] then
+            visitedParts[part] = true
+            statusLabel.Text = "Teleporting to: " .. part.Name
+            teleportToPart(part)
+            task.wait(0.3)
+        end
+    end
+
+    -- Step 4: Wait a moment for any late‑spawning Gloves, then auto‑hop
+    if isRunning then
+        statusLabel.Text = "All visited. Waiting " .. AUTO_HOP_DELAY .. "s for new Gloves..."
+        task.wait(AUTO_HOP_DELAY)
+
+        -- One final quick scan to catch any new ones that spawned during the wait
+        local newGloves = findAllPartsByName(slappleFolder, TARGET_PART_NAME)
+        for _, part in ipairs(newGloves) do
+            if not isRunning then break end
+            if not visitedParts[part] then
+                visitedParts[part] = true
+                statusLabel.Text = "Teleporting to late spawn: " .. part.Name
+                teleportToPart(part)
+                task.wait(0.3)
+            end
+        end
+
+        -- Auto‑hop if still running
+        if isRunning then
+            statusLabel.Text = "Auto‑hopping to next server..."
+            task.wait(0.5)
+            serverHop()
+        end
+    end
+end
+
+-- ===== BUTTON EVENTS =====
+startButton.MouseButton1Click:Connect(function()
+    if isRunning then
+        statusLabel.Text = "Already running"
+        return
+    end
+
+    isRunning = true
+    statusLabel.Text = "Starting..."
+    loopThread = task.spawn(runLoop)
+end)
+
+stopButton.MouseButton1Click:Connect(function()
+    if not isRunning then
+        statusLabel.Text = "Not running"
+        return
+    end
+    isRunning = false
+    statusLabel.Text = "Stopped"
+end)
+
+hopButton.MouseButton1Click:Connect(serverHop)
+
+-- Cleanup if GUI is removed
+frame.AncestryChanged:Connect(function()
+    if not frame.Parent then
+        isRunning = false
+    end
+end)
