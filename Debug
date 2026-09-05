@@ -1,0 +1,366 @@
+--[[
+  DEBUG GLOVE CODE HELPER – Slap Battles (teleport buttons, fixed positions)
+  - 5 teleport buttons for each admin glove
+  - Teleports you in front of the glove (not below)
+  - Works for all gloves (finds first BasePart inside folder)
+  - Auto‑updates digits 1, 3, 4; digit 2 appears when all gloves collected
+  - Teleport to Keypad button + X to close
+]]
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+if not Character or not Character.Parent then
+    Character = LocalPlayer.CharacterAdded:Wait()
+end
+
+local DebugRoom = Workspace:FindFirstChild("Debug Room")
+if not DebugRoom then
+    warn("'Debug Room' not found!")
+    return
+end
+
+-- ------------------------------------------------------------------
+-- 1. DIGIT 1 – Count ducks
+-- ------------------------------------------------------------------
+local function getDigit1()
+    local duckTable1 = DebugRoom:FindFirstChild("DuckTable")
+    if not duckTable1 then return nil, false end
+    local duckTable2 = duckTable1:FindFirstChild("DuckTable")
+    if not duckTable2 then return nil, false end
+
+    local count = 0
+    for _, child in ipairs(duckTable2:GetChildren()) do
+        if child.Name == "Duck" then
+            count = count + 1
+        end
+    end
+    return count, true
+end
+
+-- ------------------------------------------------------------------
+-- 2. DIGIT 2 – Check if all gloves collected, then read AdminNumber
+-- ------------------------------------------------------------------
+local function isGloveCollected(gloveName)
+    local uncollected = DebugRoom:FindFirstChild("UncollectedGloves")
+    if not uncollected then return true end
+    return not uncollected:FindFirstChild(gloveName)
+end
+
+local function allGlovesCollected()
+    local gloveNames = {"Extended", "Killerfish", "Manspider", "OneMillionBricks", "TABLE"}
+    for _, name in ipairs(gloveNames) do
+        if not isGloveCollected(name) then
+            return false
+        end
+    end
+    return true
+end
+
+local function getDigit2()
+    if not allGlovesCollected() then
+        return nil, false
+    end
+    local adminGloves = DebugRoom:FindFirstChild("AdminGloves")
+    if not adminGloves then return nil, false end
+    local glovesCode = adminGloves:FindFirstChild("GlovesCode")
+    if not glovesCode then return nil, false end
+    local surfaceGui = glovesCode:FindFirstChild("SurfaceGui")
+    if not surfaceGui then return nil, false end
+    local adminNumber = surfaceGui:FindFirstChild("AdminNumber")
+    if not adminNumber then return nil, false end
+
+    local digit = adminNumber:GetAttribute("ContentText")
+    if digit then
+        digit = tonumber(digit)
+        if digit then return digit, true end
+    end
+    if adminNumber:IsA("TextLabel") or adminNumber:IsA("TextButton") then
+        local num = tonumber(adminNumber.Text)
+        if num then return num, true end
+    end
+    return nil, false
+end
+
+-- ------------------------------------------------------------------
+-- 3. DIGIT 3 – MazeNumber
+-- ------------------------------------------------------------------
+local function getDigit3()
+    local maze = DebugRoom:FindFirstChild("Maze")
+    if not maze then return nil, false end
+    local prize = maze:FindFirstChild("MazePrize")
+    if not prize then return nil, false end
+    local surfaceGui = prize:FindFirstChild("SurfaceGui")
+    if not surfaceGui then return nil, false end
+    local mazeNumber = surfaceGui:FindFirstChild("MazeNumber")
+    if not mazeNumber then return nil, false end
+
+    local digit = mazeNumber:GetAttribute("ContentText")
+    if digit then
+        digit = tonumber(digit)
+        if digit then return digit, true end
+    end
+    if mazeNumber:IsA("TextLabel") or mazeNumber:IsA("TextButton") then
+        local num = tonumber(mazeNumber.Text)
+        if num then return num, true end
+    end
+    return nil, false
+end
+
+-- ------------------------------------------------------------------
+-- 4. DIGIT 4 – Always 7
+-- ------------------------------------------------------------------
+local function getDigit4()
+    return 7, true
+end
+
+-- ------------------------------------------------------------------
+-- 5. CREATE GUI
+-- ------------------------------------------------------------------
+local function createGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "DebugGloveHelper"
+    screenGui.Parent = LocalPlayer.PlayerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 440, 0, 480)
+    frame.Position = UDim2.new(0.5, -220, 0.5, -240)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.1
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = screenGui
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -40, 0, 30)
+    title.Position = UDim2.new(0, 5, 0, 5)
+    title.BackgroundTransparency = 1
+    title.Text = "Debug Glove Helper"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    -- Close button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Parent = frame
+    closeBtn.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+
+    -- Code display
+    local codeLabel = Instance.new("TextLabel")
+    codeLabel.Size = UDim2.new(1, -10, 0, 40)
+    codeLabel.Position = UDim2.new(0, 5, 0, 45)
+    codeLabel.BackgroundTransparency = 1
+    codeLabel.Text = "Code: ----"
+    codeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    codeLabel.TextScaled = true
+    codeLabel.Font = Enum.Font.GothamBold
+    codeLabel.Parent = frame
+
+    -- Digit status frame
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Size = UDim2.new(1, -10, 0, 60)
+    statusFrame.Position = UDim2.new(0, 5, 0, 95)
+    statusFrame.BackgroundTransparency = 1
+    statusFrame.Parent = frame
+
+    local digitStatus = {}
+    local digitNames = {"Ducks", "AdminGloves", "MazeNumber", "Last (7)"}
+    for i = 1, 4 do
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0.25, -5, 1, 0)
+        lbl.Position = UDim2.new((i-1)*0.25, 0, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "D"..i..": ?"
+        lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+        lbl.TextScaled = true
+        lbl.Font = Enum.Font.Gotham
+        lbl.Parent = statusFrame
+        digitStatus[i] = lbl
+    end
+
+    -- Glove teleport buttons
+    local gloveNames = {"Extended", "Killerfish", "Manspider", "OneMillionBricks", "TABLE"}
+    local gloveButtons = {}
+    local btnY = 170
+    local btnHeight = 30
+    for i, name in ipairs(gloveNames) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.8, 0, 0, btnHeight)
+        btn.Position = UDim2.new(0.1, 0, 0, btnY + (i-1)*(btnHeight+5))
+        btn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
+        btn.Text = "Teleport to " .. name
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextScaled = true
+        btn.Font = Enum.Font.GothamBold
+        btn.Parent = frame
+        gloveButtons[name] = btn
+    end
+
+    -- Teleport to Keypad
+    local tpKeypad = Instance.new("TextButton")
+    tpKeypad.Size = UDim2.new(0.8, 0, 0, 35)
+    tpKeypad.Position = UDim2.new(0.1, 0, 0, 175 + #gloveNames*(btnHeight+5) + 10)
+    tpKeypad.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    tpKeypad.Text = "Teleport to Keypad"
+    tpKeypad.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tpKeypad.TextScaled = true
+    tpKeypad.Font = Enum.Font.GothamBold
+    tpKeypad.Parent = frame
+
+    -- Status label
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(1, -10, 0, 40)
+    statusLabel.Position = UDim2.new(0, 5, 0, 175 + #gloveNames*(btnHeight+5) + 50)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Click a glove button to teleport, then collect it."
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.TextScaled = true
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.Parent = frame
+
+    -- ------------------------------------------------------------------
+    -- 6. TELEPORT FUNCTION (fixed positions)
+    -- ------------------------------------------------------------------
+    local function teleportToGlove(gloveName)
+        local uncollected = DebugRoom:FindFirstChild("UncollectedGloves")
+        if not uncollected then
+            statusLabel.Text = "UncollectedGloves folder not found."
+            return
+        end
+        local folder = uncollected:FindFirstChild(gloveName)
+        if not folder then
+            statusLabel.Text = gloveName .. " is already collected or not found."
+            return
+        end
+
+        -- Find any BasePart inside the folder (not just "Glove")
+        local glovePart = folder:FindFirstChildWhichIsA("BasePart")
+        if not glovePart then
+            statusLabel.Text = "No glove part found for " .. gloveName
+            return
+        end
+
+        local hrp = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Torso") or Character:FindFirstChild("UpperTorso")
+        if not hrp then
+            statusLabel.Text = "Character not ready."
+            return
+        end
+
+        -- Place the player in front of the glove (offset: 3 studs forward, 1.5 studs up)
+        local targetCF = glovePart.CFrame * CFrame.new(0, 1.5, 3)
+        hrp.CFrame = targetCF
+        statusLabel.Text = "Teleported to " .. gloveName .. ". Collect it now."
+    end
+
+    for name, btn in pairs(gloveButtons) do
+        btn.MouseButton1Click:Connect(function()
+            teleportToGlove(name)
+        end)
+    end
+
+    tpKeypad.MouseButton1Click:Connect(function()
+        if not DebugRoom then
+            statusLabel.Text = "Debug Room missing!"
+            return
+        end
+        local keypad = DebugRoom:FindFirstChild("Keypad")
+        if not keypad then
+            statusLabel.Text = "Keypad not found!"
+            return
+        end
+        local hrp = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Torso") or Character:FindFirstChild("UpperTorso")
+        if not hrp then
+            statusLabel.Text = "Character not ready."
+            return
+        end
+        local keypadPart = keypad:IsA("BasePart") and keypad or keypad:FindFirstChildWhichIsA("BasePart")
+        if not keypadPart then
+            statusLabel.Text = "Keypad has no physical part!"
+            return
+        end
+        hrp.CFrame = keypadPart.CFrame * CFrame.new(0, 2, 3)
+        statusLabel.Text = "Teleported to Keypad!"
+        task.wait(1)
+        statusLabel.Text = "Enter the code above."
+    end)
+
+    -- ------------------------------------------------------------------
+    -- 7. PERIODIC UPDATE
+    -- ------------------------------------------------------------------
+    local function updateUI()
+        local d1, f1 = getDigit1()
+        local d2, f2 = getDigit2()
+        local d3, f3 = getDigit3()
+        local d4, f4 = getDigit4()
+
+        local digits = {d1, d2, d3, d4}
+        local found = {f1, f2, f3, f4}
+        local codeString = ""
+        local missing = {}
+
+        for i = 1, 4 do
+            if found[i] and digits[i] ~= nil then
+                local num = tonumber(digits[i])
+                if num ~= nil then
+                    codeString = codeString .. tostring(num)
+                    digitStatus[i].Text = "D"..i..": "..num.." ✓"
+                    digitStatus[i].TextColor3 = Color3.fromRGB(0, 255, 0)
+                else
+                    codeString = codeString .. "?"
+                    digitStatus[i].Text = "D"..i..": ? (invalid)"
+                    digitStatus[i].TextColor3 = Color3.fromRGB(255, 200, 0)
+                    table.insert(missing, i)
+                end
+            else
+                codeString = codeString .. "?"
+                digitStatus[i].Text = "D"..i..": ? (not found)"
+                digitStatus[i].TextColor3 = Color3.fromRGB(255, 80, 80)
+                table.insert(missing, i)
+            end
+        end
+
+        if #missing > 0 then
+            codeLabel.Text = "Code: " .. codeString
+            codeLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+            local missingText = {}
+            for _, idx in ipairs(missing) do
+                table.insert(missingText, "D"..idx.." ("..digitNames[idx]..")")
+            end
+            statusLabel.Text = "Missing: " .. table.concat(missingText, ", ")
+        else
+            codeLabel.Text = "Code: " .. codeString
+            codeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            statusLabel.Text = "Full code found! Enter it into the keypad."
+        end
+    end
+
+    updateUI()
+    task.spawn(function()
+        while screenGui.Parent do
+            task.wait(2)
+            updateUI()
+        end
+    end)
+
+    return screenGui
+end
+
+repeat task.wait() until LocalPlayer.PlayerGui
+local gui = createGUI()
+print("Debug Glove Helper loaded. Use the buttons to teleport and collect each glove.")
