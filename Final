@@ -1,10 +1,12 @@
 --[[
     Clean Tabbed Helper GUI with Sidebar
     Tabs: Home | Glove
-    Home contains: Brazil Teleport + Keypad Helper
-    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled
-    Elude now only contains Maze + Glove Teleporter (Keypad moved to Home)
-    Features: Close (X), Minimize (-), Drag, Clean UI
+    Home: Brazil Teleport + Keypad Helper
+    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter (WIP)
+    Elude: Maze + Glove Teleporter (Keypad moved to Home)
+    Counter (WIP): New fly/timer/glove script with note "tp to glove doesnt recognize part"
+    Global keys: P = unlock cursor, Q = minimize
+    Sub-tab keybinds only active when that tab is open.
 ]]
 
 local Players = game:GetService("Players")
@@ -181,7 +183,7 @@ contentDivider.Parent = bodyContainer
 local minimized = false
 local originalSize = mainFrame.Size
 
-minimizeBtn.MouseButton1Click:Connect(function()
+local function toggleMinimize()
     minimized = not minimized
     bodyContainer.Visible = not minimized
     if minimized then
@@ -191,7 +193,9 @@ minimizeBtn.MouseButton1Click:Connect(function()
         mainFrame.Size = originalSize
         minimizeBtn.Text = "—"
     end
-end)
+end
+
+minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 
 -- Dragging
 local dragging = false
@@ -293,7 +297,6 @@ glovePage.Visible = false
 glovePage.Parent = contentArea
 
 -- ==================== HOME PAGE CONTENT ====================
--- Title
 local homeTitle = Instance.new("TextLabel")
 homeTitle.Size = UDim2.new(1, -40, 0, 40)
 homeTitle.Position = UDim2.new(0, 20, 0, 20)
@@ -351,7 +354,7 @@ brazilStatus.Font = Enum.Font.Gotham
 brazilStatus.TextXAlignment = Enum.TextXAlignment.Center
 brazilStatus.Parent = brazilSection
 
--- Keypad Section (moved from Elude)
+-- Keypad Section
 local keypadSection = Instance.new("Frame")
 keypadSection.Size = UDim2.new(1, -40, 0, 230)
 keypadSection.Position = UDim2.new(0, 20, 0, 190)
@@ -372,7 +375,6 @@ keypadTitle.Font = Enum.Font.GothamBold
 keypadTitle.TextXAlignment = Enum.TextXAlignment.Left
 keypadTitle.Parent = keypadSection
 
--- Keypad status, code, info labels
 local keyStatus = Instance.new("TextLabel")
 keyStatus.Size = UDim2.new(1, -20, 0, 20)
 keyStatus.Position = UDim2.new(0, 10, 0, 40)
@@ -420,36 +422,23 @@ teleportKeypadBtn.Parent = keypadSection
 addCorner(teleportKeypadBtn, 6)
 addStroke(teleportKeypadBtn, 0.3)
 
--- Keypad logic
 local function updateKeyStatus(text, color)
     keyStatus.Text = text
     if color then keyStatus.TextColor3 = color end
 end
-
-local function updateKeyCode(code)
-    keyCode.Text = "Code: " .. code
-end
-
-local function updateKeyInfo(count)
-    keyInfo.Text = "Players: " .. count
-end
+local function updateKeyCode(code) keyCode.Text = "Code: "..code end
+local function updateKeyInfo(count) keyInfo.Text = "Players: "..count end
 
 local function teleportToBackpiece()
     local keypad = workspace:FindFirstChild("Keypad")
-    if not keypad then
-        updateKeyStatus("Keypad not found!", Color3.fromRGB(255,50,50))
-        return false
-    end
+    if not keypad then updateKeyStatus("Keypad not found!", Color3.fromRGB(255,50,50)); return false end
     local backpiece = keypad:FindFirstChild("Backpiece")
-    if not backpiece or not backpiece:IsA("BasePart") then
-        updateKeyStatus("Backpiece missing!", Color3.fromRGB(255,50,50))
-        return false
-    end
+    if not backpiece or not backpiece:IsA("BasePart") then updateKeyStatus("Backpiece missing!", Color3.fromRGB(255,50,50)); return false end
     local char = LocalPlayer.Character
     if not char then return false end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return false end
-    root.CFrame = backpiece.CFrame + Vector3.new(0, 3, 0)
+    root.CFrame = backpiece.CFrame + Vector3.new(0,3,0)
     updateKeyStatus("Teleported!", Color3.fromRGB(50,255,50))
     return true
 end
@@ -465,13 +454,11 @@ teleportKeypadBtn.MouseButton1Click:Connect(function()
     refreshKeypad()
     teleportToBackpiece()
 end)
-
 Players.PlayerAdded:Connect(refreshKeypad)
 Players.PlayerRemoving:Connect(refreshKeypad)
 refreshKeypad()
 updateKeyStatus("Ready - press Teleport")
 
--- Brazil teleport logic
 local function teleportToBrazil()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -480,31 +467,16 @@ local function teleportToBrazil()
         brazilStatus.TextColor3 = Color3.fromRGB(255, 80, 80)
         return
     end
-
     local lobby = workspace:FindFirstChild("Lobby")
-    if not lobby then
-        brazilStatus.Text = "❌ Workspace.Lobby not found"
-        brazilStatus.TextColor3 = Color3.fromRGB(255, 80, 80)
-        return
-    end
+    if not lobby then brazilStatus.Text = "❌ Workspace.Lobby not found"; brazilStatus.TextColor3 = Color3.fromRGB(255,80,80); return end
     local brazil = lobby:FindFirstChild("brazil")
-    if not brazil then
-        brazilStatus.Text = "❌ Workspace.Lobby.brazil not found"
-        brazilStatus.TextColor3 = Color3.fromRGB(255, 80, 80)
-        return
-    end
+    if not brazil then brazilStatus.Text = "❌ Workspace.Lobby.brazil not found"; brazilStatus.TextColor3 = Color3.fromRGB(255,80,80); return end
     local portal = brazil:FindFirstChild("portal")
-    if not portal then
-        brazilStatus.Text = "❌ Workspace.Lobby.brazil.portal not found"
-        brazilStatus.TextColor3 = Color3.fromRGB(255, 80, 80)
-        return
-    end
-
+    if not portal then brazilStatus.Text = "❌ Workspace.Lobby.brazil.portal not found"; brazilStatus.TextColor3 = Color3.fromRGB(255,80,80); return end
     hrp.CFrame = portal.CFrame + Vector3.new(0, 2, 0)
     brazilStatus.Text = "✅ Teleported to Brazil portal!"
     brazilStatus.TextColor3 = Color3.fromRGB(80, 255, 80)
 end
-
 brazilBtn.MouseButton1Click:Connect(teleportToBrazil)
 
 -- ==================== GLOVE PAGE SUB-TABS ====================
@@ -516,16 +488,16 @@ subTabBar.BorderSizePixel = 0
 subTabBar.Parent = glovePage
 
 local subTabButtons = {}
-local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled"}
+local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter (WIP)"}
 
 for i, name in ipairs(subTabNames) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 80, 1, -8)
-    btn.Position = UDim2.new(0, 4 + (i-1)*84, 0, 4)
+    btn.Size = UDim2.new(0, 75, 1, -8)
+    btn.Position = UDim2.new(0, 4 + (i-1)*80, 0, 4)
     btn.BackgroundColor3 = (i == 1) and COLORS.sidebarActive or COLORS.sidebarButton
     btn.Text = name
     btn.TextColor3 = (i == 1) and COLORS.text or COLORS.muted
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.Font = Enum.Font.GothamSemibold
     btn.AutoButtonColor = false
     btn.BorderSizePixel = 0
@@ -538,7 +510,6 @@ for i, name in ipairs(subTabNames) do
             btn.BackgroundColor3 = COLORS.buttonHover
         end
     end)
-
     btn.MouseLeave:Connect(function()
         if btn.BackgroundColor3 ~= COLORS.sidebarActive then
             btn.BackgroundColor3 = COLORS.sidebarButton
@@ -548,7 +519,6 @@ for i, name in ipairs(subTabNames) do
     subTabButtons[name] = btn
 end
 
--- Sub-page container
 local subPageContainer = Instance.new("Frame")
 subPageContainer.Size = UDim2.new(1, -24, 1, -66)
 subPageContainer.Position = UDim2.new(0, 12, 0, 54)
@@ -586,17 +556,65 @@ untitledPage.BackgroundTransparency = 1
 untitledPage.Visible = false
 untitledPage.Parent = subPageContainer
 
+local counterPage = Instance.new("Frame")
+counterPage.Size = UDim2.new(1, 0, 1, 0)
+counterPage.BackgroundTransparency = 1
+counterPage.Visible = false
+counterPage.Parent = subPageContainer
+
+-- Keybind management
+local activeKeybinds = {}
+local eludeMazeStartFunc = nil
+local counterLeverFunc = nil
+local counterFlyFunc = nil
+local counterGloveFunc = nil
+local counterHideFunc = nil
+
+local function setActiveKeybinds(pageName)
+    for _, conn in pairs(activeKeybinds) do
+        if conn then conn:Disconnect() end
+    end
+    activeKeybinds = {}
+
+    if pageName == "Elude" then
+        local conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            if input.KeyCode == Enum.KeyCode.RightControl then
+                if eludeMazeStartFunc then eludeMazeStartFunc() end
+            end
+        end)
+        activeKeybinds[#activeKeybinds+1] = conn
+    elseif pageName == "Counter (WIP)" then
+        local conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            if input.KeyCode == Enum.KeyCode.R then
+                if counterLeverFunc then counterLeverFunc() end
+            elseif input.KeyCode == Enum.KeyCode.H then
+                if counterFlyFunc then counterFlyFunc() end
+            elseif input.KeyCode == Enum.KeyCode.G then
+                if counterGloveFunc then counterGloveFunc() end
+            elseif input.KeyCode == Enum.KeyCode.F then
+                if counterHideFunc then counterHideFunc() end
+            end
+        end)
+        activeKeybinds[#activeKeybinds+1] = conn
+    end
+end
+
 local function showSubPage(pageName)
     debugPage.Visible = (pageName == "Debug")
     eludePage.Visible = (pageName == "Elude")
     boxingPage.Visible = (pageName == "Boxing")
     fanPage.Visible = (pageName == "Fan")
     untitledPage.Visible = (pageName == "Untitled")
+    counterPage.Visible = (pageName == "Counter (WIP)")
 
     for name, btn in pairs(subTabButtons) do
         btn.BackgroundColor3 = (name == pageName) and COLORS.sidebarActive or COLORS.sidebarButton
         btn.TextColor3 = (name == pageName) and COLORS.text or COLORS.muted
     end
+
+    setActiveKeybinds(pageName)
 end
 
 subTabButtons["Debug"].MouseButton1Click:Connect(function() showSubPage("Debug") end)
@@ -604,11 +622,11 @@ subTabButtons["Elude"].MouseButton1Click:Connect(function() showSubPage("Elude")
 subTabButtons["Boxing"].MouseButton1Click:Connect(function() showSubPage("Boxing") end)
 subTabButtons["Fan"].MouseButton1Click:Connect(function() showSubPage("Fan") end)
 subTabButtons["Untitled"].MouseButton1Click:Connect(function() showSubPage("Untitled") end)
+subTabButtons["Counter (WIP)"].MouseButton1Click:Connect(function() showSubPage("Counter (WIP)") end)
 
 -- ==================== LOAD HELPERS ====================
 -- Debug Helper
 local function loadDebugHelper(parent)
-    -- (full debug helper code as before)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0.9, 0, 0.9, 0)
     frame.Position = UDim2.new(0.05, 0, 0.05, 0)
@@ -696,7 +714,6 @@ local function loadDebugHelper(parent)
     statusLabel.Font = Enum.Font.Gotham
     statusLabel.Parent = frame
 
-    -- Debug logic (same as before)
     local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     if not Character or not Character.Parent then
         Character = LocalPlayer.CharacterAdded:Wait()
@@ -844,7 +861,7 @@ local function loadDebugHelper(parent)
     end)
 end
 
--- Elude Helper (Maze only now)
+-- Elude Helper
 local function loadEludeHelper(parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0.9, 0, 0.9, 0)
@@ -927,7 +944,6 @@ local function loadEludeHelper(parent)
     addCorner(gloveBtn, 6)
     addStroke(gloveBtn, 0.3)
 
-    -- Maze logic (same as before, without keypad)
     local collectableFolder = nil
     local collectableParts = {}
     local isMazeRunning = false
@@ -1014,17 +1030,11 @@ local function loadEludeHelper(parent)
     mazeBtn.MouseButton1Click:Connect(startMaze)
     gloveBtn.MouseButton1Click:Connect(teleportToGlove)
 
-    -- Keybind for Right Control
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.KeyCode == Enum.KeyCode.RightControl then
-            startMaze()
-        end
-    end)
+    eludeMazeStartFunc = startMaze
 
     scanCollectables()
     task.wait(0.5)
-    teleportToGlove() -- update status only
+    teleportToGlove()
 end
 
 -- Boxing Helper
@@ -1074,13 +1084,19 @@ local function loadBoxingHelper(parent)
     addStroke(teleportBtn, 0.3)
 
     local function teleportAndClick()
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then status.Text = "❌ No HumanoidRootPart"; return end
+
+        -- First teleport to specific coordinates
+        root.CFrame = CFrame.new(Vector3.new(15.914116, 56.489292, 7.941850))
+        task.wait(0.1)
+
+        -- Then teleport to BoxingGloves and click
         local gloves = workspace:FindFirstChild("BoxingGloves")
         if not gloves then status.Text = "❌ BoxingGloves not found"; return end
         local clickDetector = gloves:FindFirstChild("ClickDetector")
         if not clickDetector then status.Text = "❌ No ClickDetector"; return end
-        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then status.Text = "❌ No HumanoidRootPart"; return end
 
         root.CFrame = CFrame.new(gloves.Position + Vector3.new(0, 3, 0))
         RunService.Heartbeat:Wait()
@@ -1293,18 +1309,268 @@ local function loadUntitledHelper(parent)
     setStatus("Click a button to teleport", COLORS.muted)
 end
 
+-- Counter (WIP) Helper
+local function loadCounterHelper(parent)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.7, 0, 0.8, 0)
+    frame.Position = UDim2.new(0.15, 0, 0.1, 0)
+    frame.BackgroundColor3 = COLORS.panel
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    addCorner(frame, 8)
+    addStroke(frame, 0.35)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 30)
+    title.Position = UDim2.new(0, 10, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "🥊 Counter Glove Helper (WIP)"
+    title.TextColor3 = COLORS.text
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    local noteLabel = Instance.new("TextLabel")
+    noteLabel.Size = UDim2.new(1, -20, 0, 20)
+    noteLabel.Position = UDim2.new(0, 10, 0, 40)
+    noteLabel.BackgroundTransparency = 1
+    noteLabel.Text = "Note: TP to glove does not recognize part (WIP)"
+    noteLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+    noteLabel.TextSize = 12
+    noteLabel.Font = Enum.Font.Gotham
+    noteLabel.TextXAlignment = Enum.TextXAlignment.Left
+    noteLabel.Parent = frame
+
+    local keyHint = Instance.new("TextLabel")
+    keyHint.Size = UDim2.new(1, -20, 0, 20)
+    keyHint.Position = UDim2.new(0, 10, 0, 65)
+    keyHint.BackgroundTransparency = 1
+    keyHint.Text = "[R] Lever | [H] Fly (3min) | [G] Glove | [F] Hide/Show"
+    keyHint.TextColor3 = COLORS.muted
+    keyHint.TextSize = 12
+    keyHint.Font = Enum.Font.Gotham
+    keyHint.Parent = frame
+
+    local timerLabel = Instance.new("TextLabel")
+    timerLabel.Size = UDim2.new(1, -20, 0, 30)
+    timerLabel.Position = UDim2.new(0, 10, 0, 95)
+    timerLabel.BackgroundColor3 = COLORS.panelAlt
+    timerLabel.Text = "⏱️ Timer: 00:00"
+    timerLabel.TextColor3 = Color3.fromRGB(255, 255, 150)
+    timerLabel.TextSize = 14
+    timerLabel.Font = Enum.Font.GothamBold
+    timerLabel.Parent = frame
+    addCorner(timerLabel, 4)
+    addStroke(timerLabel, 0.4)
+
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 1, -40)
+    status.BackgroundColor3 = COLORS.panelAlt
+    status.Text = "Ready"
+    status.TextColor3 = COLORS.muted
+    status.TextSize = 12
+    status.Font = Enum.Font.Gotham
+    status.Parent = frame
+    addCorner(status, 4)
+    addStroke(status, 0.4)
+
+    local function setStatus(text, color)
+        status.Text = text
+        status.TextColor3 = color or COLORS.text
+    end
+    local function updateTimerDisplay(mins, secs)
+        timerLabel.Text = string.format("⏱️ Timer: %02d:%02d", mins, secs)
+    end
+    local function teleportTo(cframe)
+        local char = LocalPlayer.Character
+        if not char then setStatus("Character not loaded!", Color3.fromRGB(255,80,80)); return false end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then setStatus("HumanoidRootPart missing!", Color3.fromRGB(255,80,80)); return false end
+        hrp.CFrame = cframe + Vector3.new(0,2,0)
+        return true
+    end
+
+    local flyEnabled = false
+    local timerThread = nil
+    local gloveSpawned = false
+    local originalPos = nil
+
+    local function setPhysicsFlight(hrp, enable)
+        local humanoid = hrp.Parent:FindFirstChildOfClass("Humanoid")
+        local floatAtt = hrp:FindFirstChild("FlightAttachment") or Instance.new("Attachment")
+        floatAtt.Name = "FlightAttachment"
+        floatAtt.Parent = hrp
+
+        local linearVelocity = hrp:FindFirstChild("FlightVelocity")
+
+        if enable then
+            if humanoid then humanoid.PlatformStand = true end
+            if not linearVelocity then
+                linearVelocity = Instance.new("LinearVelocity")
+                linearVelocity.Name = "FlightVelocity"
+                linearVelocity.MaxForce = 100000
+                linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+                linearVelocity.Attachment0 = floatAtt
+                linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+                linearVelocity.Parent = hrp
+            end
+        else
+            if humanoid then humanoid.PlatformStand = false end
+            if linearVelocity then linearVelocity:Destroy() end
+            if floatAtt then floatAtt:Destroy() end
+        end
+    end
+
+    local function stopTimer()
+        if timerThread then task.cancel(timerThread); timerThread = nil end
+        updateTimerDisplay(0,0)
+    end
+
+    local function startTimer()
+        stopTimer()
+        gloveSpawned = false
+        timerThread = task.spawn(function()
+            local remaining = 180
+            while remaining > 0 do
+                updateTimerDisplay(math.floor(remaining/60), remaining%60)
+                task.wait(1)
+                remaining -= 1
+            end
+            gloveSpawned = true
+            updateTimerDisplay(0,0)
+            setStatus("✅ Counter Glove spawned! Press G to teleport.", Color3.fromRGB(80,255,80))
+            timerThread = nil
+        end)
+    end
+
+    local function toggleFly(enable)
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if enable then
+            flyEnabled = true
+            originalPos = hrp.CFrame
+            hrp.CFrame = hrp.CFrame + Vector3.new(0, 50, 0)
+            setPhysicsFlight(hrp, true)
+            setStatus("🕊️ Fly ON (Hovering 50 studs up)", Color3.fromRGB(100,255,255))
+            startTimer()
+        else
+            flyEnabled = false
+            setPhysicsFlight(hrp, false)
+            stopTimer()
+            if originalPos then
+                hrp.CFrame = originalPos + Vector3.new(0, 2, 0)
+                originalPos = nil
+            end
+            setStatus("🕊️ Fly OFF (Returned to ground)", Color3.fromRGB(200,200,200))
+        end
+    end
+
+    local function findGlovePart()
+        local maze = workspace:FindFirstChild("Maze")
+        if not maze then return nil end
+        for _, obj in ipairs(maze:GetDescendants()) do
+            if obj:IsA("BasePart") and #obj:GetChildren() > 0 then
+                return obj
+            end
+        end
+        return nil
+    end
+
+    local function teleportToGlove()
+        if not gloveSpawned then
+            setStatus("❌ Glove hasn't spawned yet. Wait for timer.", Color3.fromRGB(255,200,0))
+            return
+        end
+        local part = findGlovePart()
+        if not part then
+            setStatus("❌ No glove part found in Workspace.Maze!", Color3.fromRGB(255,80,80))
+            return
+        end
+        teleportTo(part.CFrame)
+        setStatus("✅ Teleported to Glove! Click it to collect.", Color3.fromRGB(80,255,80))
+    end
+
+    local function actionLever()
+        setStatus("Searching for lever...", Color3.fromRGB(100,200,255))
+        local lever = workspace:FindFirstChild("CounterLever")
+        if not lever then setStatus("❌ CounterLever not found", Color3.fromRGB(255,80,80)); return end
+        local main = lever:FindFirstChild("Main")
+        if main and main:IsA("BasePart") then
+            if teleportTo(main.CFrame) then setStatus("✅ Teleported to Lever (Main)", Color3.fromRGB(80,255,80)) end
+        else
+            for _, p in ipairs(lever:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    if teleportTo(p.CFrame) then setStatus("✅ Teleported to Lever (Fallback)", Color3.fromRGB(80,255,80)) end
+                    return
+                end
+            end
+            setStatus("❌ No BasePart in CounterLever", Color3.fromRGB(255,80,80))
+        end
+    end
+
+    local function actionToggleFly() toggleFly(not flyEnabled) end
+    local function actionGlove() teleportToGlove() end
+    local function actionHide() frame.Visible = not frame.Visible end
+
+    local function createButton(text, yPos, action)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.8, 0, 0, 40)
+        btn.Position = UDim2.new(0.1, 0, 0, yPos)
+        btn.BackgroundColor3 = COLORS.sidebarButton
+        btn.AutoButtonColor = false
+        btn.Text = text
+        btn.TextColor3 = COLORS.text
+        btn.TextSize = 13
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BorderSizePixel = 0
+        btn.Parent = frame
+        addCorner(btn, 6)
+        addStroke(btn, 0.4)
+        btn.MouseButton1Click:Connect(action)
+    end
+
+    createButton("🔧 Teleport to Lever [R]", 140, actionLever)
+    createButton("🕊️ Fly (3min timer) [H]", 195, actionToggleFly)
+    createButton("🧤 TP to Glove [G]", 250, actionGlove)
+
+    -- Store functions for keybinds
+    counterLeverFunc = actionLever
+    counterFlyFunc = actionToggleFly
+    counterGloveFunc = actionGlove
+    counterHideFunc = actionHide
+
+    updateTimerDisplay(0,0)
+    setStatus("Ready – press H to fly, G after timer", COLORS.muted)
+end
+
 -- Load all sub-pages
 loadDebugHelper(debugPage)
 loadEludeHelper(eludePage)
 loadBoxingHelper(boxingPage)
 loadFanHelper(fanPage)
 loadUntitledHelper(untitledPage)
+loadCounterHelper(counterPage)
+
+-- ==================== GLOBAL KEYBINDS ====================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    elseif input.KeyCode == Enum.KeyCode.Q then
+        toggleMinimize()
+    end
+end)
 
 -- ==================== MAIN TAB SWITCHING ====================
 local function showMainPage(pageName)
     homePage.Visible = (pageName == "home")
     glovePage.Visible = (pageName == "glove")
     updateSidebarHighlight(pageName == "home" and homeTabBtn or gloveTabBtn)
+    setActiveKeybinds(nil)  -- clear any sub-tab keybinds
 end
 
 homeTabBtn.MouseButton1Click:Connect(function() showMainPage("home") end)
