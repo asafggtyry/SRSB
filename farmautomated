@@ -1,0 +1,513 @@
+--[[
+    Mapity's Auto Farm Script
+    Features: Multi-page UI, Target Teleport/Slap, Auto Slap Farm, and 'P' Key Visibility Toggle.
+]]
+
+-- Safely clear out any previously running instances
+if game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("SolaraMultiPageHub") then
+    game:GetService("Players").LocalPlayer.PlayerGui.SolaraMultiPageHub:Destroy()
+end
+
+-- 1. Create Main Screen Container
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SolaraMultiPageHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+
+-- Centered Medium Main Window
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 550, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -275, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(14, 14, 16)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 10)
+Corner.Parent = MainFrame
+
+-- Top Accent Line
+local AccentLine = Instance.new("Frame")
+AccentLine.Size = UDim2.new(1, 0, 0, 3)
+AccentLine.BackgroundColor3 = Color3.fromRGB(0, 210, 255)
+AccentLine.BorderSizePixel = 0
+AccentLine.Parent = MainFrame
+
+local AccentCorner = Instance.new("UICorner")
+AccentCorner.CornerRadius = UDim.new(0, 10)
+AccentCorner.Parent = AccentLine
+
+-- Header Title Label
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Size = UDim2.new(0, 300, 0, 24)
+TitleLabel.Position = UDim2.new(0, 12, 0, 8)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "Mapitys auto farm"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 13
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = MainFrame
+
+-- Window Controls (X)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 24, 0, 24)
+CloseBtn.Position = UDim2.new(1, -34, 0, 10)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+CloseBtn.Text = "×"
+CloseBtn.TextColor3 = Color3.fromRGB(150, 150, 160)
+CloseBtn.TextSize = 20
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = MainFrame
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
+
+-- 2. Sidebar Navigation Layout
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 120, 1, -45)
+Sidebar.Position = UDim2.new(0, 10, 0, 35)
+Sidebar.BackgroundTransparency = 1
+Sidebar.Parent = MainFrame
+
+local NavPlayersBtn = Instance.new("TextButton")
+NavPlayersBtn.Size = UDim2.new(1, 0, 0, 35)
+NavPlayersBtn.Position = UDim2.new(0, 0, 0, 10)
+NavPlayersBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+NavPlayersBtn.Text = "Players"
+NavPlayersBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+NavPlayersBtn.TextSize = 11
+NavPlayersBtn.Font = Enum.Font.GothamBold
+NavPlayersBtn.Parent = Sidebar
+
+local NavPlayersCorner = Instance.new("UICorner")
+NavPlayersCorner.CornerRadius = UDim.new(0, 6)
+NavPlayersCorner.Parent = NavPlayersBtn
+
+local NavFarmBtn = Instance.new("TextButton")
+NavFarmBtn.Size = UDim2.new(1, 0, 0, 35)
+NavFarmBtn.Position = UDim2.new(0, 0, 0, 50)
+NavFarmBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+NavFarmBtn.Text = "Slap Farm"
+NavFarmBtn.TextColor3 = Color3.fromRGB(140, 140, 150)
+NavFarmBtn.TextSize = 11
+NavFarmBtn.Font = Enum.Font.GothamBold
+NavFarmBtn.Parent = Sidebar
+
+local NavFarmCorner = Instance.new("UICorner")
+NavFarmCorner.CornerRadius = UDim.new(0, 6)
+NavFarmCorner.Parent = NavFarmBtn
+
+-- 3. Core Page Containers
+local ContainerPlayers = Instance.new("Frame")
+ContainerPlayers.Name = "ContainerPlayers"
+ContainerPlayers.Size = UDim2.new(1, -150, 1, -45)
+ContainerPlayers.Position = UDim2.new(0, 140, 0, 35)
+ContainerPlayers.BackgroundTransparency = 1
+ContainerPlayers.Parent = MainFrame
+
+local ContainerFarm = Instance.new("Frame")
+ContainerFarm.Name = "ContainerFarm"
+ContainerFarm.Size = UDim2.new(1, -150, 1, -45)
+ContainerFarm.Position = UDim2.new(0, 140, 0, 35)
+ContainerFarm.BackgroundTransparency = 1
+ContainerFarm.Visible = false
+ContainerFarm.Parent = MainFrame
+
+-- ==========================================
+-- PLAYERS PAGE ASSETS
+-- ==========================================
+local ListScroll = Instance.new("ScrollingFrame")
+ListScroll.Size = UDim2.new(0, 185, 1, -20)
+ListScroll.Position = UDim2.new(0, 0, 0, 10)
+ListScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+ListScroll.BorderSizePixel = 0
+ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListScroll.ScrollBarThickness = 3
+ListScroll.Parent = ContainerPlayers
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 5)
+ListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ListLayout.Parent = ListScroll
+
+local ListCorner = Instance.new("UICorner")
+ListCorner.CornerRadius = UDim.new(0, 8)
+ListCorner.Parent = ListScroll
+
+local TargetPage = Instance.new("Frame")
+TargetPage.Size = UDim2.new(1, -200, 1, -20)
+TargetPage.Position = UDim2.new(0, 195, 0, 10)
+TargetPage.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+TargetPage.Visible = false
+TargetPage.Parent = ContainerPlayers
+
+local PageCorner = Instance.new("UICorner")
+PageCorner.CornerRadius = UDim.new(0, 8)
+PageCorner.Parent = TargetPage
+
+local AvatarImage = Instance.new("ImageLabel")
+AvatarImage.Size = UDim2.new(0, 90, 0, 90)
+AvatarImage.Position = UDim2.new(0.5, -45, 0, 15)
+AvatarImage.BackgroundColor3 = Color3.fromRGB(14, 14, 16)
+AvatarImage.Parent = TargetPage
+
+local AvatarCorner = Instance.new("UICorner")
+AvatarCorner.CornerRadius = UDim.new(0, 45)
+AvatarCorner.Parent = AvatarImage
+
+local NameLabel = Instance.new("TextLabel")
+NameLabel.Size = UDim2.new(1, -16, 0, 40)
+NameLabel.Position = UDim2.new(0, 8, 0, 115)
+NameLabel.BackgroundTransparency = 1
+NameLabel.Text = "Username"
+NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+NameLabel.TextSize = 12
+NameLabel.Font = Enum.Font.GothamBold
+NameLabel.TextWrapped = true
+NameLabel.Parent = TargetPage
+
+local TeleportBtn = Instance.new("TextButton")
+TeleportBtn.Size = UDim2.new(1, -24, 0, 36)
+TeleportBtn.Position = UDim2.new(0, 12, 1, -92)
+TeleportBtn.BackgroundColor3 = Color3.fromRGB(28, 32, 40)
+TeleportBtn.Text = "TELEPORT TO PLAYER"
+TeleportBtn.TextColor3 = Color3.fromRGB(0, 210, 255)
+TeleportBtn.TextSize = 10
+TeleportBtn.Font = Enum.Font.GothamBold
+TeleportBtn.Parent = TargetPage
+
+local TpCorner = Instance.new("UICorner")
+TpCorner.CornerRadius = UDim.new(0, 6)
+TpCorner.Parent = TeleportBtn
+
+local SlapBtn = Instance.new("TextButton")
+SlapBtn.Size = UDim2.new(1, -24, 0, 36)
+SlapBtn.Position = UDim2.new(0, 12, 1, -46)
+SlapBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+SlapBtn.Text = "TELEPORT & SLAP"
+SlapBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SlapBtn.TextSize = 10
+SlapBtn.Font = Enum.Font.GothamBold
+SlapBtn.Parent = TargetPage
+
+local SlapCorner = Instance.new("UICorner")
+SlapCorner.CornerRadius = UDim.new(0, 6)
+SlapCorner.Parent = SlapBtn
+
+-- ==========================================
+-- SLAP FARM PAGE ASSETS
+-- ==========================================
+local FarmCard = Instance.new("Frame")
+FarmCard.Size = UDim2.new(1, -15, 1, -20)
+FarmCard.Position = UDim2.new(0, 0, 0, 10)
+FarmCard.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+FarmCard.Parent = ContainerFarm
+
+local CardCorner = Instance.new("UICorner")
+CardCorner.CornerRadius = UDim.new(0, 8)
+CardCorner.Parent = FarmCard
+
+local FarmTitle = Instance.new("TextLabel")
+FarmTitle.Size = UDim2.new(1, 0, 0, 30)
+FarmTitle.Position = UDim2.new(0, 0, 0, 15)
+FarmTitle.BackgroundTransparency = 1
+FarmTitle.Text = "SLAP FARM AUTOMATION"
+FarmTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+FarmTitle.TextSize = 14
+FarmTitle.Font = Enum.Font.GothamBold
+FarmTitle.Parent = FarmCard
+
+local FarmDesc = Instance.new("TextLabel")
+FarmDesc.Size = UDim2.new(1, -40, 0, 60)
+FarmDesc.Position = UDim2.new(0, 20, 0, 45)
+FarmDesc.BackgroundTransparency = 1
+FarmDesc.Text = "Tracks closest players using predictive movement, handles high-frequency sinewave dodging matrix, detects enemy slaps, and activates automatic mid-arena void rescue safety systems."
+FarmDesc.TextColor3 = Color3.fromRGB(140, 140, 150)
+FarmDesc.TextSize = 11
+FarmDesc.Font = Enum.Font.Gotham
+FarmDesc.TextWrapped = true
+FarmDesc.Parent = FarmCard
+
+local ToggleFarmBtn = Instance.new("TextButton")
+ToggleFarmBtn.Size = UDim2.new(0, 260, 0, 45)
+ToggleFarmBtn.Position = UDim2.new(0.5, -130, 0.5, 10)
+ToggleFarmBtn.BackgroundColor3 = Color3.fromRGB(235, 45, 45)
+ToggleFarmBtn.Text = "ACTIVATE SLAP FARM"
+ToggleFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleFarmBtn.TextSize = 12
+ToggleFarmBtn.Font = Enum.Font.GothamBold
+ToggleFarmBtn.Parent = FarmCard
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 8)
+ToggleCorner.Parent = ToggleFarmBtn
+
+-- ==========================================
+-- CORE AUTOMATION ENGINE LOGIC
+-- ==========================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local farmingActive = false
+local isResetting = false 
+local activeTarget = nil
+local lastJumpDodge = 0
+local selectedPlayer = nil
+
+-- Target Acquisition
+local function getClosestPlayer()
+    if isResetting then return nil end 
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+    local myChar = LocalPlayer.Character
+    
+    if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+        local myRoot = myChar.HumanoidRootPart
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChildOfClass("Humanoid") then
+                local enemyHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                if enemyHumanoid.Health > 0 and not player.Character:FindFirstChild("IsInSafeZone") then
+                    local distance = (player.Character.HumanoidRootPart.Position - myRoot.Position).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- Real-time Animation Scanner
+local function isTargetSlapping(targetChar)
+    if not targetChar then return false end
+    local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            local animName = track.Name:lower()
+            local animId = track.Animation and track.Animation.AnimationId or ""
+            if animName:find("slap") or animName:find("swing") or animId:find("94025") or animId:find("1154") then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Heartbeat Physics Frame Engine Loop Connection
+local Connection
+Connection = RunService.Heartbeat:Connect(function()
+    if not ScreenGui or not ScreenGui.Parent then
+        if Connection then Connection:Disconnect() end
+        return
+    end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") or not myChar:FindFirstChildOfClass("Humanoid") then return end
+    
+    local myRoot = myChar.HumanoidRootPart
+    local myHumanoid = myChar:FindFirstChildOfClass("Humanoid")
+    
+    -- ANTI-VOID SAFETY NET SYSTEM
+    if myRoot.Position.Y < -10 and not isResetting then
+        isResetting = true
+        activeTarget = nil
+        myRoot.Velocity = Vector3.new(0, 0, 0)
+        myHumanoid:MoveTo(myRoot.Position)
+        myRoot.CFrame = CFrame.new(0, 50, 0)
+        
+        task.spawn(function()
+            task.wait(1.0)
+            isResetting = false
+        end)
+    end
+    
+    -- ATTACK AND HUNT MANIPULATION ENGINE
+    if farmingActive and not isResetting then
+        activeTarget = getClosestPlayer()
+        if activeTarget and activeTarget.Character and activeTarget.Character:FindFirstChild("HumanoidRootPart") then
+            local targetRoot = activeTarget.Character.HumanoidRootPart
+            local currentDistance = (targetRoot.Position - myRoot.Position).Magnitude
+            local targetIsAttacking = isTargetSlapping(activeTarget.Character)
+            
+            myRoot.CFrame = CFrame.lookAt(myRoot.Position, Vector3.new(targetRoot.Position.X, myRoot.Position.Y, targetRoot.Position.Z))
+            
+            if currentDistance <= 11 and targetIsAttacking then
+                -- Direct Vector Physics Jump-Dodge Injection
+                local escapeDirection = (myRoot.Position - targetRoot.Position).Unit
+                myRoot.Velocity = (escapeDirection * 45) + Vector3.new(0, 35, 0)
+                if tick() - lastJumpDodge > 0.4 then
+                    myHumanoid.Jump = true
+                    lastJumpDodge = tick()
+                end
+            else
+                -- Predictive Chasing Paths
+                local leadTime = 0.15
+                local predictedPosition = targetRoot.Position + (targetRoot.Velocity * leadTime)
+                if currentDistance > 7.5 then
+                    myHumanoid:MoveTo(predictedPosition)
+                else
+                    -- Tight High-Frequency Circle Flanking Weave
+                    local backAnchor = targetRoot.CFrame.LookVector * -2.0
+                    local waveJitter = math.sin(tick() * 18) * 2.0
+                    local strafeAnchor = targetRoot.CFrame.RightVector * waveJitter
+                    myHumanoid:MoveTo(targetRoot.Position + backAnchor + strafeAnchor)
+                end
+            end
+            
+            -- Activation Hitbox Trigger Spam
+            if currentDistance <= 9.0 and not targetIsAttacking then
+                local glove = myChar:FindFirstChildOfClass("Tool")
+                if glove then
+                    glove:Activate()
+                else
+                    local backupGlove = LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
+                    if backupGlove then
+                        backupGlove.Parent = myChar
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Toggle GUI Visibility via Keybind "P"
+local ToggleConnection
+ToggleConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+-- ==========================================
+-- WINDOW EVENT HANDLERS AND NAV ROUTING
+-- ==========================================
+local function openPlayerPage(targetPlayer)
+    selectedPlayer = targetPlayer
+    NameLabel.Text = targetPlayer.DisplayName .. "\n(@" .. targetPlayer.Name .. ")"
+    AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. targetPlayer.UserId .. "&w=150&h=150"
+    TargetPage.Visible = true
+end
+
+local function refreshPlayerList()
+    for _, child in ipairs(ListScroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local PlayerRow = Instance.new("TextButton")
+            PlayerRow.Size = UDim2.new(1, -12, 0, 38)
+            PlayerRow.BackgroundColor3 = Color3.fromRGB(26, 26, 32)
+            PlayerRow.Text = " " .. player.DisplayName
+            PlayerRow.TextColor3 = Color3.fromRGB(210, 210, 220)
+            PlayerRow.TextSize = 11
+            PlayerRow.Font = Enum.Font.Gotham
+            PlayerRow.TextXAlignment = Enum.TextXAlignment.Left
+            PlayerRow.Parent = ListScroll
+            
+            local rowCorner = Instance.new("UICorner")
+            rowCorner.CornerRadius = UDim.new(0, 6)
+            rowCorner.Parent = PlayerRow
+            
+            PlayerRow.MouseButton1Click:Connect(function() openPlayerPage(player) end)
+        end
+    end
+end
+
+-- Navigation Tab Logic Switches
+NavPlayersBtn.MouseButton1Click:Connect(function()
+    ContainerFarm.Visible = false
+    ContainerPlayers.Visible = true
+    NavPlayersBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    NavPlayersBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NavFarmBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    NavFarmBtn.TextColor3 = Color3.fromRGB(140, 140, 150)
+end)
+
+NavFarmBtn.MouseButton1Click:Connect(function()
+    ContainerPlayers.Visible = false
+    ContainerFarm.Visible = true
+    NavFarmBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    NavFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    NavPlayersBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    NavPlayersBtn.TextColor3 = Color3.fromRGB(140, 140, 150)
+end)
+
+-- Player Interaction Executions
+TeleportBtn.MouseButton1Click:Connect(function()
+    if selectedPlayer and selectedPlayer.Character and LocalPlayer.Character then
+        local tRoot = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local mRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if tRoot and mRoot then mRoot.CFrame = tRoot.CFrame * CFrame.new(0, 3, 0) end
+    end
+end)
+
+SlapBtn.MouseButton1Click:Connect(function()
+    if selectedPlayer and selectedPlayer.Character and LocalPlayer.Character then
+        local tRoot = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local mRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if tRoot and mRoot then
+            mRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 2.2)
+            task.wait(0.04)
+            local glove = LocalPlayer.Character:FindFirstChildOfClass("Tool") or LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
+            if glove then
+                glove.Parent = LocalPlayer.Character
+                task.wait(0.01)
+                glove:Activate()
+            end
+        end
+    end
+end)
+
+-- Slap Farm Activator System Configuration
+ToggleFarmBtn.MouseButton1Click:Connect(function()
+    farmingActive = not farmingActive
+    if farmingActive then
+        ToggleFarmBtn.Text = "DEACTIVATE SLAP FARM"
+        ToggleFarmBtn.BackgroundColor3 = Color3.fromRGB(40, 175, 105)
+        AccentLine.BackgroundColor3 = Color3.fromRGB(40, 175, 105)
+    else
+        ToggleFarmBtn.Text = "ACTIVATE SLAP FARM"
+        ToggleFarmBtn.BackgroundColor3 = Color3.fromRGB(235, 45, 45)
+        AccentLine.BackgroundColor3 = Color3.fromRGB(0, 210, 255)
+        
+        local myChar = LocalPlayer.Character
+        if myChar and myChar:FindFirstChildOfClass("Humanoid") then
+            myChar:FindFirstChildOfClass("Humanoid"):MoveTo(myChar.HumanoidRootPart.Position)
+        end
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    farmingActive = false
+    activeTarget = nil
+    selectedPlayer = nil
+    if Connection then Connection:Disconnect() end
+    if ToggleConnection then ToggleConnection:Disconnect() end
+    ScreenGui:Destroy()
+end)
+
+-- Environment Synchronization Hooks
+Players.PlayerAdded:Connect(refreshPlayerList)
+Players.PlayerRemoving:Connect(function(player)
+    if selectedPlayer == player then
+        TargetPage.Visible = false
+        selectedPlayer = nil
+    end
+    refreshPlayerList()
+end)
+
+refreshPlayerList()
