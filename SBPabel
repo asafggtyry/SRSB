@@ -1,0 +1,211 @@
+-- Slap Battles – Auto-Slap, Anti-KB, Teleport1 Auto-Rejoin & GUI
+if game.PlaceId ~= 6403373529 then return end
+
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+-- State
+local antiKnockbackEnabled = false
+local autoSlapEnabled = false
+local autoPortalEnabled = true -- Enabled by default
+local MAX_RANGE = math.huge
+
+-- ============================================
+--  TELEPORT1 FINDER & TELEPORT
+-- ============================================
+
+local function getTeleport1CFrame()
+    -- Directly references workspace.Lobby.Teleport1
+    local lobby = workspace:FindFirstChild("Lobby")
+    if lobby then
+        local teleport1 = lobby:FindFirstChild("Teleport1")
+        if teleport1 then
+            if teleport1:IsA("BasePart") then
+                return teleport1.CFrame
+            elseif teleport1:IsA("Model") then
+                return teleport1:GetPivot()
+            end
+        end
+    end
+    
+    -- Fallback safety check if Teleport1 is not yet loaded or named differently
+    return CFrame.new(-10, 10, -5)
+end
+
+local function enterPortal()
+    if Player and Player.Character then
+        local hrp = Player.Character:WaitForChild("HumanoidRootPart", 5)
+        if hrp then
+            task.wait(0.3) -- Brief pause for character loading/spawn physics
+            pcall(function()
+                local targetCFrame = getTeleport1CFrame()
+                hrp.CFrame = targetCFrame
+            end)
+        end
+    end
+end
+
+-- Automatically runs whenever character dies and respawns
+Player.CharacterAdded:Connect(function(newCharacter)
+    if autoPortalEnabled then
+        enterPortal()
+    end
+end)
+
+-- ============================================
+--  ANTI-KNOCKBACK (Velocity Reset)
+-- ============================================
+RunService.Heartbeat:Connect(function()
+    if antiKnockbackEnabled and Player and Player.Character then
+        local hrp = Player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y > 0 and 0 or hrp.AssemblyLinearVelocity.Y, 0)
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+end)
+
+-- ============================================
+--  CORE FUNCTIONS
+-- ============================================
+
+local function slapAllInMap()
+    if not (Player and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")) then
+        return
+    end
+    local root = Player.Character.HumanoidRootPart
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local tRoot = p.Character.HumanoidRootPart
+            if (tRoot.Position - root.Position).Magnitude <= MAX_RANGE then
+                local arm = p.Character:FindFirstChild("Right Arm")
+                if arm then
+                    pcall(function()
+                        ReplicatedStorage.b:FireServer(arm)
+                        local vel = tRoot.AssemblyLinearVelocity
+                        if vel.Y > 0 then
+                            tRoot.AssemblyLinearVelocity = Vector3.new(vel.X, -5, vel.Z)
+                        else
+                            tRoot.AssemblyLinearVelocity = Vector3.new(vel.X, vel.Y - 3, vel.Z)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end
+
+-- ============================================
+--  ALWAYS-ON AUTO SLAP LOOP
+-- ============================================
+task.spawn(function()
+    while true do
+        if autoSlapEnabled then
+            slapAllInMap()
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- ============================================
+--  GUI CREATION
+-- ============================================
+
+local function buildGUI()
+    local parentTarget = CoreGui
+    local success = pcall(function() local _ = CoreGui.Name end)
+    if not success then
+        parentTarget = Player:WaitForChild("PlayerGui")
+    end
+
+    if parentTarget:FindFirstChild("SlapBattlesGUI") then
+        parentTarget.SlapBattlesGUI:Destroy()
+    end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "SlapBattlesGUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = parentTarget
+
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 220, 0, 180)
+    Frame.Position = UDim2.new(0.05, 0, 0.35, 0)
+    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    Frame.BorderSizePixel = 0
+    Frame.Active = true
+    Frame.Draggable = true
+    Frame.Parent = ScreenGui
+
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 8)
+    UICorner.Parent = Frame
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 35)
+    Title.Text = "Slap Battles Panel"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 16
+    Title.Font = Enum.Font.SourceSansBold
+    Title.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    Title.Parent = Frame
+
+    local TitleCorner = Instance.new("UICorner")
+    TitleCorner.CornerRadius = UDim.new(0, 8)
+    TitleCorner.Parent = Title
+
+    local function createButton(text, pos, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0.9, 0, 0, 35)
+        btn.Position = pos
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.SourceSansSemibold
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        btn.Parent = Frame
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 6)
+        btnCorner.Parent = btn
+
+        btn.MouseButton1Click:Connect(callback)
+        return btn
+    end
+
+    local antiKbBtn = createButton("Anti-Knockback (K): OFF", UDim2.new(0.05, 0, 0.26, 0), function()
+        antiKnockbackEnabled = not antiKnockbackEnabled
+        antiKbBtn.Text = "Anti-Knockback (K): " .. (antiKnockbackEnabled and "ON" or "OFF")
+    end)
+
+    local slapBtn = createButton("Auto-Slap Map (J): OFF", UDim2.new(0.05, 0, 0.50, 0), function()
+        autoSlapEnabled = not autoSlapEnabled
+        slapBtn.Text = "Auto-Slap Map (J): " .. (autoSlapEnabled and "ON" or "OFF")
+    end)
+
+    local autoPortalBtn = createButton("Auto Teleport1 (L): ON", UDim2.new(0.05, 0, 0.74, 0), function()
+        autoPortalEnabled = not autoPortalEnabled
+        autoPortalBtn.Text = "Auto Teleport1 (L): " .. (autoPortalEnabled and "ON" or "OFF")
+    end)
+
+    -- Keybind listeners
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.K then
+            antiKnockbackEnabled = not antiKnockbackEnabled
+            antiKbBtn.Text = "Anti-Knockback (K): " .. (antiKnockbackEnabled and "ON" or "OFF")
+        elseif input.KeyCode == Enum.KeyCode.J then
+            autoSlapEnabled = not autoSlapEnabled
+            slapBtn.Text = "Auto-Slap Map (J): " .. (autoSlapEnabled and "ON" or "OFF")
+        elseif input.KeyCode == Enum.KeyCode.L then
+            autoPortalEnabled = not autoPortalEnabled
+            autoPortalBtn.Text = "Auto Teleport1 (L): " .. (autoPortalEnabled and "ON" or "OFF")
+        end
+    end)
+end
+
+buildGUI()
+print("=== Slap Script Loaded ===")
