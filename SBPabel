@@ -1,4 +1,4 @@
--- Slap Battles – Auto-Slap, Anti-KB, Teleport1 Auto-Rejoin & GUI
+-- Slap Battles – 200ms Center Teleport, Ultra-Tunable Aura & GUI
 if game.PlaceId ~= 6403373529 then return end
 
 local Players = game:GetService("Players")
@@ -8,18 +8,68 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 
--- State
+-- State Controls
 local antiKnockbackEnabled = false
 local autoSlapEnabled = false
-local autoPortalEnabled = true -- Enabled by default
-local MAX_RANGE = math.huge
+local autoPortalEnabled = true
+local autoCenterTeleportEnabled = false
+local safeModeEnabled = true -- Randomizes delay & rotation to bypass anti-cheat
+
+-- Configurable Slap Settings
+local slapRange = 15         -- Default range (studs)
+local slapsPerLoop = 1       -- Default slaps per hit
+local slapDelay = 350        -- Default slap loop delay (ms)
+
+-- Center Ground CFrame
+local ARENA_GROUND_CFRAME = CFrame.new(0, -0.5, 0)
+
+-- UI Handles
+local UI_REFERENCES = {}
 
 -- ============================================
---  TELEPORT1 FINDER & TELEPORT
+--  STATE UPDATE HELPERS
+-- ============================================
+
+local function setAntiKB(state)
+    antiKnockbackEnabled = state
+    if UI_REFERENCES.AntiKB then
+        UI_REFERENCES.AntiKB.Text = "Anti-Knockback (K): " .. (antiKnockbackEnabled and "ON" or "OFF")
+    end
+end
+
+local function setAutoSlap(state)
+    autoSlapEnabled = state
+    if UI_REFERENCES.AutoSlap then
+        UI_REFERENCES.AutoSlap.Text = "Auto-Slap (J): " .. (autoSlapEnabled and "ON" or "OFF")
+    end
+end
+
+local function setAutoPortal(state)
+    autoPortalEnabled = state
+    if UI_REFERENCES.AutoPortal then
+        UI_REFERENCES.AutoPortal.Text = "Auto Teleport1 (L): " .. (autoPortalEnabled and "ON" or "OFF")
+    end
+end
+
+local function setCenterTeleport(state)
+    autoCenterTeleportEnabled = state
+    if UI_REFERENCES.CenterTp then
+        UI_REFERENCES.CenterTp.Text = "Fast Center (200ms): " .. (autoCenterTeleportEnabled and "ON" or "OFF")
+    end
+end
+
+local function setSafeMode(state)
+    safeModeEnabled = state
+    if UI_REFERENCES.SafeMode then
+        UI_REFERENCES.SafeMode.Text = "Bypass Anti-Cheat: " .. (safeModeEnabled and "ON" or "OFF")
+    end
+end
+
+-- ============================================
+--  TELEPORT1 FINDER & REJOIN
 -- ============================================
 
 local function getTeleport1CFrame()
-    -- Directly references workspace.Lobby.Teleport1
     local lobby = workspace:FindFirstChild("Lobby")
     if lobby then
         local teleport1 = lobby:FindFirstChild("Teleport1")
@@ -31,8 +81,6 @@ local function getTeleport1CFrame()
             end
         end
     end
-    
-    -- Fallback safety check if Teleport1 is not yet loaded or named differently
     return CFrame.new(-10, 10, -5)
 end
 
@@ -40,17 +88,15 @@ local function enterPortal()
     if Player and Player.Character then
         local hrp = Player.Character:WaitForChild("HumanoidRootPart", 5)
         if hrp then
-            task.wait(0.3) -- Brief pause for character loading/spawn physics
+            task.wait(0.3)
             pcall(function()
-                local targetCFrame = getTeleport1CFrame()
-                hrp.CFrame = targetCFrame
+                hrp.CFrame = getTeleport1CFrame()
             end)
         end
     end
 end
 
--- Automatically runs whenever character dies and respawns
-Player.CharacterAdded:Connect(function(newCharacter)
+Player.CharacterAdded:Connect(function()
     if autoPortalEnabled then
         enterPortal()
     end
@@ -70,10 +116,26 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ============================================
---  CORE FUNCTIONS
+--  FAST CENTER GROUND LOOP (Every 200ms)
 -- ============================================
+task.spawn(function()
+    while true do
+        if autoCenterTeleportEnabled and Player and Player.Character then
+            local hrp = Player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                pcall(function()
+                    hrp.CFrame = ARENA_GROUND_CFRAME
+                end)
+            end
+        end
+        task.wait(0.2) -- 200 milliseconds
+    end
+end)
 
-local function slapAllInMap()
+-- ============================================
+--  ANTI-CHEAT SAFE SLAP AURA
+-- ============================================
+local function safeSlap()
     if not (Player and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")) then
         return
     end
@@ -81,33 +143,44 @@ local function slapAllInMap()
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= Player and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
             local tRoot = p.Character.HumanoidRootPart
-            if (tRoot.Position - root.Position).Magnitude <= MAX_RANGE then
+            if (tRoot.Position - root.Position).Magnitude <= slapRange then
                 local arm = p.Character:FindFirstChild("Right Arm")
                 if arm then
-                    pcall(function()
-                        ReplicatedStorage.b:FireServer(arm)
-                        local vel = tRoot.AssemblyLinearVelocity
-                        if vel.Y > 0 then
-                            tRoot.AssemblyLinearVelocity = Vector3.new(vel.X, -5, vel.Z)
-                        else
-                            tRoot.AssemblyLinearVelocity = Vector3.new(vel.X, vel.Y - 3, vel.Z)
-                        end
-                    end)
+                    -- Anti-Cheat Angle Spoof: Face the target character before firing
+                    if safeModeEnabled then
+                        root.CFrame = CFrame.new(root.Position, Vector3.new(tRoot.Position.X, root.Position.Y, tRoot.Position.Z))
+                    end
+                    
+                    for i = 1, slapsPerLoop do
+                        pcall(function()
+                            ReplicatedStorage.b:FireServer(arm)
+                            local vel = tRoot.AssemblyLinearVelocity
+                            if vel.Y > 0 then
+                                tRoot.AssemblyLinearVelocity = Vector3.new(vel.X, -5, vel.Z)
+                            else
+                                tRoot.AssemblyLinearVelocity = Vector3.new(vel.X, vel.Y - 3, vel.Z)
+                            end
+                        end)
+                    end
                 end
             end
         end
     end
 end
 
--- ============================================
---  ALWAYS-ON AUTO SLAP LOOP
--- ============================================
 task.spawn(function()
     while true do
         if autoSlapEnabled then
-            slapAllInMap()
+            safeSlap()
         end
-        task.wait(0.1)
+        
+        -- Dynamic timing with jitter to bypass anti-cheat pattern detection
+        local currentDelay = slapDelay / 1000
+        if safeModeEnabled then
+            currentDelay = currentDelay + (math.random(-20, 30) / 1000)
+        end
+        
+        task.wait(math.max(0.05, currentDelay))
     end
 end)
 
@@ -132,8 +205,8 @@ local function buildGUI()
     ScreenGui.Parent = parentTarget
 
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(0, 220, 0, 180)
-    Frame.Position = UDim2.new(0.05, 0, 0.35, 0)
+    Frame.Size = UDim2.new(0, 240, 0, 390)
+    Frame.Position = UDim2.new(0.05, 0, 0.20, 0)
     Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
     Frame.BorderSizePixel = 0
     Frame.Active = true
@@ -159,11 +232,11 @@ local function buildGUI()
 
     local function createButton(text, pos, callback)
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.9, 0, 0, 35)
+        btn.Size = UDim2.new(0.9, 0, 0, 26)
         btn.Position = pos
         btn.Text = text
         btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.TextSize = 14
+        btn.TextSize = 12
         btn.Font = Enum.Font.SourceSansSemibold
         btn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         btn.Parent = Frame
@@ -176,36 +249,133 @@ local function buildGUI()
         return btn
     end
 
-    local antiKbBtn = createButton("Anti-Knockback (K): OFF", UDim2.new(0.05, 0, 0.26, 0), function()
-        antiKnockbackEnabled = not antiKnockbackEnabled
-        antiKbBtn.Text = "Anti-Knockback (K): " .. (antiKnockbackEnabled and "ON" or "OFF")
+    -- Create Toggle Buttons
+    UI_REFERENCES.AntiKB = createButton("Anti-Knockback (K): OFF", UDim2.new(0.05, 0, 0.10, 0), function()
+        setAntiKB(not antiKnockbackEnabled)
     end)
 
-    local slapBtn = createButton("Auto-Slap Map (J): OFF", UDim2.new(0.05, 0, 0.50, 0), function()
-        autoSlapEnabled = not autoSlapEnabled
-        slapBtn.Text = "Auto-Slap Map (J): " .. (autoSlapEnabled and "ON" or "OFF")
+    UI_REFERENCES.AutoSlap = createButton("Auto-Slap (J): OFF", UDim2.new(0.05, 0, 0.18, 0), function()
+        setAutoSlap(not autoSlapEnabled)
     end)
 
-    local autoPortalBtn = createButton("Auto Teleport1 (L): ON", UDim2.new(0.05, 0, 0.74, 0), function()
-        autoPortalEnabled = not autoPortalEnabled
-        autoPortalBtn.Text = "Auto Teleport1 (L): " .. (autoPortalEnabled and "ON" or "OFF")
+    UI_REFERENCES.AutoPortal = createButton("Auto Teleport1 (L): ON", UDim2.new(0.05, 0, 0.26, 0), function()
+        setAutoPortal(not autoPortalEnabled)
     end)
 
-    -- Keybind listeners
+    UI_REFERENCES.CenterTp = createButton("Fast Center (200ms): OFF", UDim2.new(0.05, 0, 0.34, 0), function()
+        setCenterTeleport(not autoCenterTeleportEnabled)
+    end)
+
+    UI_REFERENCES.SafeMode = createButton("Bypass Anti-Cheat: ON", UDim2.new(0.05, 0, 0.42, 0), function()
+        setSafeMode(not safeModeEnabled)
+    end)
+
+    -- Initialize states
+    setAntiKB(antiKnockbackEnabled)
+    setAutoSlap(autoSlapEnabled)
+    setAutoPortal(autoPortalEnabled)
+    setCenterTeleport(autoCenterTeleportEnabled)
+    setSafeMode(safeModeEnabled)
+
+    -- Slider Construction Helper
+    local function createSlider(titleText, minVal, maxVal, defaultVal, posY, suffix, onUpdate)
+        local SliderFrame = Instance.new("Frame")
+        SliderFrame.Size = UDim2.new(0.9, 0, 0, 38)
+        SliderFrame.Position = posY
+        SliderFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+        SliderFrame.Parent = Frame
+
+        local SliderCorner = Instance.new("UICorner")
+        SliderCorner.CornerRadius = UDim.new(0, 6)
+        SliderCorner.Parent = SliderFrame
+
+        local SliderLabel = Instance.new("TextLabel")
+        SliderLabel.Size = UDim2.new(1, 0, 0, 16)
+        SliderLabel.Text = titleText .. ": " .. tostring(defaultVal) .. suffix
+        SliderLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+        SliderLabel.TextSize = 11
+        SliderLabel.Font = Enum.Font.SourceSansSemibold
+        SliderLabel.BackgroundTransparency = 1
+        SliderLabel.Parent = SliderFrame
+
+        local Track = Instance.new("TextButton")
+        Track.Size = UDim2.new(0.9, 0, 0, 8)
+        Track.Position = UDim2.new(0.05, 0, 0.58, 0)
+        Track.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        Track.Text = ""
+        Track.Parent = SliderFrame
+
+        local TrackCorner = Instance.new("UICorner")
+        TrackCorner.CornerRadius = UDim.new(0, 4)
+        TrackCorner.Parent = Track
+
+        local Fill = Instance.new("Frame")
+        Fill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
+        Fill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        Fill.BorderSizePixel = 0
+        Fill.Parent = Track
+
+        local FillCorner = Instance.new("UICorner")
+        FillCorner.CornerRadius = UDim.new(0, 4)
+        FillCorner.Parent = Fill
+
+        local isDragging = false
+
+        local function update(input)
+            local relativeX = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+            local currentVal = math.floor(minVal + (relativeX * (maxVal - minVal)))
+            Fill.Size = UDim2.new(relativeX, 0, 1, 0)
+            SliderLabel.Text = titleText .. ": " .. tostring(currentVal) .. suffix
+            onUpdate(currentVal)
+        end
+
+        Track.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDragging = true
+                update(input)
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDragging = false
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                update(input)
+            end
+        end)
+    end
+
+    -- 1. Slap Range Slider (5 to 40 studs)
+    createSlider("Aura Distance", 5, 40, slapRange, UDim2.new(0.05, 0, 0.51, 0), " Studs", function(val)
+        slapRange = val
+    end)
+
+    -- 2. Slap Delay Speed Slider (50ms to 1000ms)
+    createSlider("Slap Delay", 50, 1000, slapDelay, UDim2.new(0.05, 0, 0.63, 0), " ms", function(val)
+        slapDelay = val
+    end)
+
+    -- 3. Slaps Per Loop Slider (1 to 5 hits)
+    createSlider("Slaps / Loop", 1, 5, slapsPerLoop, UDim2.new(0.05, 0, 0.75, 0), " Hits", function(val)
+        slapsPerLoop = val
+    end)
+
+    -- Keybind Listeners
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if input.KeyCode == Enum.KeyCode.K then
-            antiKnockbackEnabled = not antiKnockbackEnabled
-            antiKbBtn.Text = "Anti-Knockback (K): " .. (antiKnockbackEnabled and "ON" or "OFF")
+            setAntiKB(not antiKnockbackEnabled)
         elseif input.KeyCode == Enum.KeyCode.J then
-            autoSlapEnabled = not autoSlapEnabled
-            slapBtn.Text = "Auto-Slap Map (J): " .. (autoSlapEnabled and "ON" or "OFF")
+            setAutoSlap(not autoSlapEnabled)
         elseif input.KeyCode == Enum.KeyCode.L then
-            autoPortalEnabled = not autoPortalEnabled
-            autoPortalBtn.Text = "Auto Teleport1 (L): " .. (autoPortalEnabled and "ON" or "OFF")
+            setAutoPortal(not autoPortalEnabled)
         end
     end)
 end
 
 buildGUI()
-print("=== Slap Script Loaded ===")
+print("=== Fast Center & Tunable Slap Script Loaded ===")
