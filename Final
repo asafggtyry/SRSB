@@ -2,7 +2,7 @@
     Clean Tabbed Helper GUI with Sidebar
     Tabs: Home | Glove
     Home: Brazil Teleport + Keypad Helper
-    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter (WIP)
+    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter (WIP) | Plate | Plank
     Elude: Maze + Glove Teleporter (Keypad moved to Home)
     Counter (WIP): New fly/timer/glove script with note "tp to glove doesnt recognize part"
     Global keys: P = unlock cursor, Q = minimize
@@ -488,16 +488,17 @@ subTabBar.BorderSizePixel = 0
 subTabBar.Parent = glovePage
 
 local subTabButtons = {}
-local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter (WIP)"}
+-- ADDED "Plate" and "Plank" at the end
+local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter (WIP)", "Plate", "Plank"}
 
 for i, name in ipairs(subTabNames) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 75, 1, -8)
-    btn.Position = UDim2.new(0, 4 + (i-1)*80, 0, 4)
+    btn.Size = UDim2.new(0, 60, 1, -8)          -- reduced width to fit 8 tabs
+    btn.Position = UDim2.new(0, 4 + (i-1)*68, 0, 4)  -- spacing 68
     btn.BackgroundColor3 = (i == 1) and COLORS.sidebarActive or COLORS.sidebarButton
     btn.Text = name
     btn.TextColor3 = (i == 1) and COLORS.text or COLORS.muted
-    btn.TextSize = 12
+    btn.TextSize = 11
     btn.Font = Enum.Font.GothamSemibold
     btn.AutoButtonColor = false
     btn.BorderSizePixel = 0
@@ -525,7 +526,7 @@ subPageContainer.Position = UDim2.new(0, 12, 0, 54)
 subPageContainer.BackgroundTransparency = 1
 subPageContainer.Parent = glovePage
 
--- Create sub-pages
+-- Create sub-pages (added Plate and Plank)
 local debugPage = Instance.new("Frame")
 debugPage.Size = UDim2.new(1, 0, 1, 0)
 debugPage.BackgroundTransparency = 1
@@ -561,6 +562,19 @@ counterPage.Size = UDim2.new(1, 0, 1, 0)
 counterPage.BackgroundTransparency = 1
 counterPage.Visible = false
 counterPage.Parent = subPageContainer
+
+-- NEW: Plate and Plank pages
+local platePage = Instance.new("Frame")
+platePage.Size = UDim2.new(1, 0, 1, 0)
+platePage.BackgroundTransparency = 1
+platePage.Visible = false
+platePage.Parent = subPageContainer
+
+local plankPage = Instance.new("Frame")
+plankPage.Size = UDim2.new(1, 0, 1, 0)
+plankPage.BackgroundTransparency = 1
+plankPage.Visible = false
+plankPage.Parent = subPageContainer
 
 -- Keybind management
 local activeKeybinds = {}
@@ -599,6 +613,7 @@ local function setActiveKeybinds(pageName)
         end)
         activeKeybinds[#activeKeybinds+1] = conn
     end
+    -- Plate and Plank have no special keybinds (intentionally left empty)
 end
 
 local function showSubPage(pageName)
@@ -608,6 +623,8 @@ local function showSubPage(pageName)
     fanPage.Visible = (pageName == "Fan")
     untitledPage.Visible = (pageName == "Untitled")
     counterPage.Visible = (pageName == "Counter (WIP)")
+    platePage.Visible = (pageName == "Plate")
+    plankPage.Visible = (pageName == "Plank")
 
     for name, btn in pairs(subTabButtons) do
         btn.BackgroundColor3 = (name == pageName) and COLORS.sidebarActive or COLORS.sidebarButton
@@ -623,6 +640,8 @@ subTabButtons["Boxing"].MouseButton1Click:Connect(function() showSubPage("Boxing
 subTabButtons["Fan"].MouseButton1Click:Connect(function() showSubPage("Fan") end)
 subTabButtons["Untitled"].MouseButton1Click:Connect(function() showSubPage("Untitled") end)
 subTabButtons["Counter (WIP)"].MouseButton1Click:Connect(function() showSubPage("Counter (WIP)") end)
+subTabButtons["Plate"].MouseButton1Click:Connect(function() showSubPage("Plate") end)
+subTabButtons["Plank"].MouseButton1Click:Connect(function() showSubPage("Plank") end)
 
 -- ==================== LOAD HELPERS ====================
 -- Debug Helper
@@ -1547,6 +1566,309 @@ local function loadCounterHelper(parent)
     setStatus("Ready – press H to fly, G after timer", COLORS.muted)
 end
 
+-- ==================== PLATE HELPER ====================
+local function loadPlateHelper(parent)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.9, 0, 0.9, 0)
+    frame.Position = UDim2.new(0.05, 0, 0.05, 0)
+    frame.BackgroundColor3 = COLORS.panel
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    addCorner(frame, 8)
+    addStroke(frame, 0.35)
+
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 30)
+    title.Position = UDim2.new(0, 10, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "📋 Plate Glove Helper"
+    title.TextColor3 = COLORS.text
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    -- Status
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(1, -20, 0, 25)
+    statusLabel.Position = UDim2.new(0, 10, 0, 45)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "Ready"
+    statusLabel.TextColor3 = COLORS.muted
+    statusLabel.TextSize = 12
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.Parent = frame
+
+    -- Timer
+    local timerLabel = Instance.new("TextLabel")
+    timerLabel.Size = UDim2.new(1, -20, 0, 25)
+    timerLabel.Position = UDim2.new(0, 10, 0, 75)
+    timerLabel.BackgroundTransparency = 1
+    timerLabel.Text = ""
+    timerLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+    timerLabel.TextSize = 14
+    timerLabel.Font = Enum.Font.GothamBold
+    timerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    timerLabel.Parent = frame
+
+    local function setStatus(text, color)
+        statusLabel.Text = text
+        statusLabel.TextColor3 = color or COLORS.muted
+    end
+    local function setTimer(text)
+        timerLabel.Text = text
+    end
+
+    -- Teleport helper
+    local function teleportTo(cframe)
+        local char = LocalPlayer.Character
+        if not char then return false end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return false end
+        root.CFrame = cframe + Vector3.new(0, 2, 0)
+        return true
+    end
+
+    -- Spam left‑click (using VirtualInputManager)
+    local function spamLeftClick(duration)
+        local success, err = pcall(function()
+            local start = tick()
+            while tick() - start < duration do
+                VIM:SendMouseButtonEvent(0, 0, 0, true, Enum.UserInputType.MouseButton1, 0)
+                task.wait(0.05)
+                VIM:SendMouseButtonEvent(0, 0, 0, false, Enum.UserInputType.MouseButton1, 0)
+                task.wait(0.05)
+            end
+        end)
+        if not success then
+            warn("VirtualInputManager not available; trying fallback remotes.")
+            local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+            if remotes then
+                for i = 1, 10 do
+                    local use = remotes:FindFirstChild("Use")
+                    if use then use:FireServer() end
+                    local slap = remotes:FindFirstChild("Slap")
+                    if slap then slap:FireServer() end
+                    task.wait(0.1)
+                end
+            end
+        end
+    end
+
+    -- 1. TP to Plate
+    local function tpToPlate()
+        setStatus("📍 Searching for Plate...", Color3.fromRGB(200, 200, 255))
+        local plate = nil
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == "Plate" then
+                plate = obj
+                break
+            end
+        end
+        if not plate then
+            setStatus("❌ Plate not found anywhere!", Color3.fromRGB(255, 80, 80))
+            return
+        end
+        if teleportTo(plate.CFrame) then
+            setStatus("✅ Arrived at Plate.", Color3.fromRGB(80, 255, 80))
+        end
+    end
+
+    -- 2. Slap Sign
+    local function slapSign()
+        setStatus("🔍 Looking for Sign...", Color3.fromRGB(200, 200, 255))
+        local sign = nil
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == "Sign" then
+                sign = obj
+                break
+            end
+        end
+        if not sign then
+            setStatus("❌ Sign not found! Can't slap.", Color3.fromRGB(255, 80, 80))
+            return
+        end
+        setStatus("🚶 Moving near Sign...", Color3.fromRGB(200, 200, 100))
+        teleportTo(sign.CFrame)
+        task.wait(0.3)
+        setStatus("✋ Spamming left‑click to slap...", Color3.fromRGB(255, 200, 100))
+        spamLeftClick(1.5)
+        setStatus("✅ Slapped the Sign! Now use Survive.", Color3.fromRGB(80, 255, 80))
+    end
+
+    -- 3. Survive: clear obstacles for 2 minutes
+    local surviveActive = false
+    local clearLoop = nil
+    local surviveThread = nil
+
+    local function survive()
+        if surviveActive then
+            setStatus("⚠️ Already in survival mode.", Color3.fromRGB(255, 200, 0))
+            return
+        end
+
+        local obstaclesFolder = workspace:FindFirstChild("Obstacles")
+        if not obstaclesFolder then
+            setStatus("❌ No 'Obstacles' folder found! Can't clear obstacles.", Color3.fromRGB(255, 80, 80))
+            return
+        end
+
+        setStatus("🧹 Clearing all obstacles...", Color3.fromRGB(200, 200, 255))
+        surviveActive = true
+        local duration = 120
+
+        -- Continuously delete children
+        clearLoop = RunService.Heartbeat:Connect(function()
+            if not surviveActive then
+                clearLoop:Disconnect()
+                return
+            end
+            for _, child in ipairs(obstaclesFolder:GetChildren()) do
+                child:Destroy()
+            end
+        end)
+
+        setStatus("🛡️ Surviving for 120 seconds (obstacles cleared constantly)", Color3.fromRGB(255, 255, 100))
+        setTimer("⏳ 120s remaining")
+
+        surviveThread = task.spawn(function()
+            local remaining = duration
+            while remaining > 0 and surviveActive do
+                setTimer(string.format("⏳ %d seconds remaining", remaining))
+                task.wait(1)
+                remaining -= 1
+            end
+            -- Clean up
+            surviveActive = false
+            if clearLoop then clearLoop:Disconnect(); clearLoop = nil end
+            setTimer("✅ Survival complete!")
+            setStatus("🎉 You should have the Plate glove and badge now!", Color3.fromRGB(80, 255, 80))
+            surviveThread = nil
+        end)
+    end
+
+    -- Buttons
+    local buttonY = 120
+    local btnWidth = 0.7
+    local btnHeight = 40
+    local gap = 10
+
+    local function createPlateButton(text, y, action)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(btnWidth, 0, 0, btnHeight)
+        btn.Position = UDim2.new((1 - btnWidth)/2, 0, 0, y)
+        btn.BackgroundColor3 = COLORS.sidebarButton
+        btn.AutoButtonColor = false
+        btn.Text = text
+        btn.TextColor3 = COLORS.text
+        btn.TextSize = 13
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BorderSizePixel = 0
+        btn.Parent = frame
+        addCorner(btn, 6)
+        addStroke(btn, 0.4)
+        btn.MouseButton1Click:Connect(action)
+        return btn
+    end
+
+    createPlateButton("📍 TP to Plate", buttonY, tpToPlate)
+    createPlateButton("✋ Slap Sign", buttonY + btnHeight + gap, slapSign)
+    createPlateButton("🧹 Survive (clear obstacles)", buttonY + 2*(btnHeight + gap), survive)
+
+    setStatus("✅ Plate helper ready. Use: TP → Slap → Survive", COLORS.muted)
+end
+
+-- ==================== PLANK HELPER ====================
+local function loadPlankHelper(parent)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.6, 0, 0.5, 0)
+    frame.Position = UDim2.new(0.2, 0, 0.25, 0)
+    frame.BackgroundColor3 = COLORS.panel
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    addCorner(frame, 8)
+    addStroke(frame, 0.35)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 30)
+    title.Position = UDim2.new(0, 10, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "🪵 Plank Glove Helper"
+    title.TextColor3 = COLORS.text
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, -20, 0, 30)
+    status.Position = UDim2.new(0, 10, 1, -40)
+    status.BackgroundColor3 = COLORS.panelAlt
+    status.Text = "Ready"
+    status.TextColor3 = COLORS.muted
+    status.TextSize = 12
+    status.Font = Enum.Font.Gotham
+    status.Parent = frame
+    addCorner(status, 4)
+    addStroke(status, 0.4)
+
+    local function setStatus(text, color)
+        status.Text = text
+        status.TextColor3 = color or COLORS.text
+    end
+
+    local function teleportToPlank()
+        setStatus("🔍 Searching for 'Plank'...", Color3.fromRGB(200, 200, 255))
+        local plankPart = nil
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Name == "Plank" then
+                plankPart = obj
+                break
+            end
+        end
+        if not plankPart then
+            setStatus("❌ No part named 'Plank' found in workspace.", Color3.fromRGB(255, 80, 80))
+            return
+        end
+        local char = LocalPlayer.Character
+        if not char then setStatus("❌ Character not loaded.", Color3.fromRGB(255, 80, 80)); return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then setStatus("❌ HumanoidRootPart missing.", Color3.fromRGB(255, 80, 80)); return end
+        hrp.CFrame = plankPart.CFrame + Vector3.new(0, 2, 0)
+        setStatus("✅ Teleported to Plank part.", Color3.fromRGB(80, 255, 80))
+    end
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.8, 0, 0, 50)
+    btn.Position = UDim2.new(0.1, 0, 0.25, 0)
+    btn.BackgroundColor3 = COLORS.button
+    btn.AutoButtonColor = false
+    btn.Text = "🪵 Teleport to Plank"
+    btn.TextColor3 = COLORS.text
+    btn.TextSize = 14
+    btn.Font = Enum.Font.GothamSemibold
+    btn.BorderSizePixel = 0
+    btn.Parent = frame
+    addCorner(btn, 6)
+    addStroke(btn, 0.3)
+    btn.MouseButton1Click:Connect(teleportToPlank)
+
+    local note = Instance.new("TextLabel")
+    note.Size = UDim2.new(0.9, 0, 0.2, 0)
+    note.Position = UDim2.new(0.05, 0, 0.55, 0)
+    note.BackgroundTransparency = 1
+    note.Text = "This helper searches for a part named 'Plank' and teleports you to it.\n(Adjust the name if the actual glove uses a different part.)"
+    note.TextColor3 = COLORS.muted
+    note.TextSize = 11
+    note.Font = Enum.Font.Gotham
+    note.TextWrapped = true
+    note.Parent = frame
+
+    setStatus("Click the button to teleport to the Plank part.", COLORS.muted)
+end
+
 -- Load all sub-pages
 loadDebugHelper(debugPage)
 loadEludeHelper(eludePage)
@@ -1554,6 +1876,8 @@ loadBoxingHelper(boxingPage)
 loadFanHelper(fanPage)
 loadUntitledHelper(untitledPage)
 loadCounterHelper(counterPage)
+loadPlateHelper(platePage)
+loadPlankHelper(plankPage)
 
 -- ==================== GLOBAL KEYBINDS ====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
