@@ -2,7 +2,7 @@
     Clean Tabbed Helper GUI with Sidebar
     Tabs: Home | Glove
     Home: Brazil Teleport + Keypad Helper
-    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter (WIP) | Plate | Plank
+    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter (WIP) | Plate | Riftshot
     Elude: Maze + Glove Teleporter (Keypad moved to Home)
     Counter (WIP): New fly/timer/glove script with note "tp to glove doesnt recognize part"
     Global keys: P = unlock cursor, Q = minimize
@@ -488,8 +488,8 @@ subTabBar.BorderSizePixel = 0
 subTabBar.Parent = glovePage
 
 local subTabButtons = {}
--- ADDED "Plate" and "Plank" at the end
-local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter (WIP)", "Plate", "Plank"}
+-- Replaced "Plank" with "Riftshot"
+local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter (WIP)", "Plate", "Riftshot"}
 
 for i, name in ipairs(subTabNames) do
     local btn = Instance.new("TextButton")
@@ -526,7 +526,7 @@ subPageContainer.Position = UDim2.new(0, 12, 0, 54)
 subPageContainer.BackgroundTransparency = 1
 subPageContainer.Parent = glovePage
 
--- Create sub-pages (added Plate and Plank)
+-- Create sub-pages (added Riftshot, removed Plank)
 local debugPage = Instance.new("Frame")
 debugPage.Size = UDim2.new(1, 0, 1, 0)
 debugPage.BackgroundTransparency = 1
@@ -563,18 +563,18 @@ counterPage.BackgroundTransparency = 1
 counterPage.Visible = false
 counterPage.Parent = subPageContainer
 
--- NEW: Plate and Plank pages
 local platePage = Instance.new("Frame")
 platePage.Size = UDim2.new(1, 0, 1, 0)
 platePage.BackgroundTransparency = 1
 platePage.Visible = false
 platePage.Parent = subPageContainer
 
-local plankPage = Instance.new("Frame")
-plankPage.Size = UDim2.new(1, 0, 1, 0)
-plankPage.BackgroundTransparency = 1
-plankPage.Visible = false
-plankPage.Parent = subPageContainer
+-- NEW: Riftshot page (replaces Plank)
+local riftshotPage = Instance.new("Frame")
+riftshotPage.Size = UDim2.new(1, 0, 1, 0)
+riftshotPage.BackgroundTransparency = 1
+riftshotPage.Visible = false
+riftshotPage.Parent = subPageContainer
 
 -- Keybind management
 local activeKeybinds = {}
@@ -613,7 +613,7 @@ local function setActiveKeybinds(pageName)
         end)
         activeKeybinds[#activeKeybinds+1] = conn
     end
-    -- Plate and Plank have no special keybinds (intentionally left empty)
+    -- Plate and Riftshot have no special keybinds
 end
 
 local function showSubPage(pageName)
@@ -624,7 +624,7 @@ local function showSubPage(pageName)
     untitledPage.Visible = (pageName == "Untitled")
     counterPage.Visible = (pageName == "Counter (WIP)")
     platePage.Visible = (pageName == "Plate")
-    plankPage.Visible = (pageName == "Plank")
+    riftshotPage.Visible = (pageName == "Riftshot")
 
     for name, btn in pairs(subTabButtons) do
         btn.BackgroundColor3 = (name == pageName) and COLORS.sidebarActive or COLORS.sidebarButton
@@ -641,7 +641,7 @@ subTabButtons["Fan"].MouseButton1Click:Connect(function() showSubPage("Fan") end
 subTabButtons["Untitled"].MouseButton1Click:Connect(function() showSubPage("Untitled") end)
 subTabButtons["Counter (WIP)"].MouseButton1Click:Connect(function() showSubPage("Counter (WIP)") end)
 subTabButtons["Plate"].MouseButton1Click:Connect(function() showSubPage("Plate") end)
-subTabButtons["Plank"].MouseButton1Click:Connect(function() showSubPage("Plank") end)
+subTabButtons["Riftshot"].MouseButton1Click:Connect(function() showSubPage("Riftshot") end)
 
 -- ==================== LOAD HELPERS ====================
 -- Debug Helper
@@ -1780,11 +1780,12 @@ local function loadPlateHelper(parent)
     setStatus("✅ Plate helper ready. Use: TP → Slap → Survive", COLORS.muted)
 end
 
--- ==================== PLANK HELPER ====================
-local function loadPlankHelper(parent)
+-- ==================== RIFTSHOT HELPER ====================
+-- Replaces the old Plank helper with the Riftshot logic
+local function loadRiftshotHelper(parent)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.6, 0, 0.5, 0)
-    frame.Position = UDim2.new(0.2, 0, 0.25, 0)
+    frame.Size = UDim2.new(0.6, 0, 0.6, 0)
+    frame.Position = UDim2.new(0.2, 0, 0.2, 0)
     frame.BackgroundColor3 = COLORS.panel
     frame.BorderSizePixel = 0
     frame.Parent = parent
@@ -1795,7 +1796,7 @@ local function loadPlankHelper(parent)
     title.Size = UDim2.new(1, -20, 0, 30)
     title.Position = UDim2.new(0, 10, 0, 10)
     title.BackgroundTransparency = 1
-    title.Text = "🪵 Plank Glove Helper"
+    title.Text = "🎯 Riftshot Glove Helper"
     title.TextColor3 = COLORS.text
     title.TextSize = 16
     title.Font = Enum.Font.GothamBold
@@ -1819,33 +1820,83 @@ local function loadPlankHelper(parent)
         status.TextColor3 = color or COLORS.text
     end
 
-    local function teleportToPlank()
-        setStatus("🔍 Searching for 'Plank'...", Color3.fromRGB(200, 200, 255))
-        local plankPart = nil
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name == "Plank" then
-                plankPart = obj
-                break
-            end
-        end
-        if not plankPart then
-            setStatus("❌ No part named 'Plank' found in workspace.", Color3.fromRGB(255, 80, 80))
-            return
-        end
+    -- Teleport helper
+    local function teleportTo(pos)
         local char = LocalPlayer.Character
-        if not char then setStatus("❌ Character not loaded.", Color3.fromRGB(255, 80, 80)); return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then setStatus("❌ HumanoidRootPart missing.", Color3.fromRGB(255, 80, 80)); return end
-        hrp.CFrame = plankPart.CFrame + Vector3.new(0, 2, 0)
-        setStatus("✅ Teleported to Plank part.", Color3.fromRGB(80, 255, 80))
+        if not char then setStatus("❌ Character not loaded.", Color3.fromRGB(255,80,80)); return false end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then setStatus("❌ HumanoidRootPart missing.", Color3.fromRGB(255,80,80)); return false end
+        root.CFrame = CFrame.new(pos)
+        return true
     end
 
+    -- Clearing state
+    local isClearing = false
+    local clearConnection = nil
+    local childAddedConnection = nil
+    local targetsFolder = nil
+
+    local function stopClearing()
+        if clearConnection then clearConnection:Disconnect(); clearConnection = nil end
+        if childAddedConnection then childAddedConnection:Disconnect(); childAddedConnection = nil end
+        isClearing = false
+        setStatus("⏹️ Stopped clearing.", COLORS.muted)
+    end
+
+    local function startClearing()
+        if isClearing then
+            setStatus("⚠️ Already clearing.", Color3.fromRGB(255,200,0))
+            return
+        end
+
+        -- 1. Teleport to the spot
+        setStatus("📍 Teleporting to (-260, 16, 485)...", Color3.fromRGB(200,200,255))
+        teleportTo(Vector3.new(-260, 16, 485))
+        task.wait(0.5)
+
+        -- 2. Locate the targets folder
+        targetsFolder = workspace:FindFirstChild("Sharpshooter Sam's Targets")
+        if not targetsFolder then
+            setStatus("❌ Folder 'Sharpshooter Sam's Targets' not found!", Color3.fromRGB(255,80,80))
+            return
+        end
+
+        setStatus("🧹 Started continuous clearing...", Color3.fromRGB(255,255,100))
+        isClearing = true
+
+        -- Function to delete all current children
+        local function deleteAllChildren()
+            for _, child in ipairs(targetsFolder:GetChildren()) do
+                child:Destroy()
+            end
+        end
+
+        -- Delete everything every frame (via Heartbeat)
+        clearConnection = RunService.Heartbeat:Connect(function()
+            if not isClearing then
+                clearConnection:Disconnect()
+                return
+            end
+            deleteAllChildren()
+        end)
+
+        -- Also delete new items as soon as they appear
+        childAddedConnection = targetsFolder.ChildAdded:Connect(function(child)
+            if isClearing then
+                child:Destroy()
+            end
+        end)
+
+        setStatus("✅ Clearing active – all targets/bombs gone instantly.", Color3.fromRGB(80,255,80))
+    end
+
+    -- Button to start/stop
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.8, 0, 0, 50)
-    btn.Position = UDim2.new(0.1, 0, 0.25, 0)
+    btn.Size = UDim2.new(0.6, 0, 0.25, 0)
+    btn.Position = UDim2.new(0.2, 0, 0.55, 0)
     btn.BackgroundColor3 = COLORS.button
     btn.AutoButtonColor = false
-    btn.Text = "🪵 Teleport to Plank"
+    btn.Text = "▶ Start Helper"
     btn.TextColor3 = COLORS.text
     btn.TextSize = 14
     btn.Font = Enum.Font.GothamSemibold
@@ -1853,20 +1904,30 @@ local function loadPlankHelper(parent)
     btn.Parent = frame
     addCorner(btn, 6)
     addStroke(btn, 0.3)
-    btn.MouseButton1Click:Connect(teleportToPlank)
 
-    local note = Instance.new("TextLabel")
-    note.Size = UDim2.new(0.9, 0, 0.2, 0)
-    note.Position = UDim2.new(0.05, 0, 0.55, 0)
-    note.BackgroundTransparency = 1
-    note.Text = "This helper searches for a part named 'Plank' and teleports you to it.\n(Adjust the name if the actual glove uses a different part.)"
-    note.TextColor3 = COLORS.muted
-    note.TextSize = 11
-    note.Font = Enum.Font.Gotham
-    note.TextWrapped = true
-    note.Parent = frame
+    btn.MouseButton1Click:Connect(function()
+        if isClearing then
+            stopClearing()
+            btn.Text = "▶ Start Helper"
+        else
+            startClearing()
+            btn.Text = "⏹ Stop Helper"
+        end
+    end)
 
-    setStatus("Click the button to teleport to the Plank part.", COLORS.muted)
+    -- Additional info label
+    local info = Instance.new("TextLabel")
+    info.Size = UDim2.new(0.9, 0, 0.2, 0)
+    info.Position = UDim2.new(0.05, 0, 0.82, 0)
+    info.BackgroundTransparency = 1
+    info.Text = "Teleports you to the targets and deletes all targets/bombs continuously. Click Stop to end."
+    info.TextColor3 = COLORS.muted
+    info.TextSize = 11
+    info.Font = Enum.Font.Gotham
+    info.TextWrapped = true
+    info.Parent = frame
+
+    setStatus("Click 'Start Helper' to begin.", COLORS.muted)
 end
 
 -- Load all sub-pages
@@ -1877,7 +1938,7 @@ loadFanHelper(fanPage)
 loadUntitledHelper(untitledPage)
 loadCounterHelper(counterPage)
 loadPlateHelper(platePage)
-loadPlankHelper(plankPage)
+loadRiftshotHelper(riftshotPage)   -- Replaces Plank
 
 -- ==================== GLOBAL KEYBINDS ====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
