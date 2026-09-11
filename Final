@@ -1,14 +1,11 @@
 --[[
     Clean Tabbed Helper GUI with Sidebar
     Tabs: Home | Glove
-    Home: Brazil Teleport (place ID) + Main Game Teleport + Keypad Helper
-    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter | Plate | Riftshot | Plunger | OperaGX (WIP)
-    Elude: Maze (place TP) + Glove Teleporter
-    Counter: New fly/timer/glove script with note "tp to glove doesnt recognize part"
-    Plate: TP to Plate Place + Survive (clear obstacles)
-    OperaGX: WIP - teleport to Opera GX place + challenge portals/buttons (not fully working)
+    Home: Brazil Teleport + Main Game Teleport + Keypad Helper
+    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Plate | Riftshot | Plunger | WIP
+    WIP sub-tabs: Counter | OperaGX | Camera (placeholder)
+    Every glove tab shows: glove ownership + place warning (if applicable).
     Global keys: P = unlock cursor, Q = minimize
-    Sub-tab keybinds only active when that tab is open.
 ]]
 
 local Players = game:GetService("Players")
@@ -22,18 +19,11 @@ local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local VIM = game:GetService("VirtualInputManager")
 
--- Prevent duplicate
 if PlayerGui:FindFirstChild("HelperHub") then
     PlayerGui.HelperHub:Destroy()
 end
 
--- ==================== MAIN GUI ====================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "HelperHub"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = PlayerGui
-
--- ==================== UI THEME ====================
+-- ==================== THEME ====================
 local COLORS = {
     window = Color3.fromRGB(24, 24, 28),
     topBar = Color3.fromRGB(18, 18, 21),
@@ -57,53 +47,154 @@ local COLORS = {
     warn = Color3.fromRGB(255, 180, 60),
 }
 
--- ==================== PLACE ID CONFIG ====================
 local PLACE_IDS = {
-    MainGame    = 6403373529,       -- Slap Battles (main game)
-    Brazil      = 7234087065,       -- Brazil place
-    UntitledTag = 115782629143468,  -- Untitled Tag place
-    EludeMaze   = 11828384869,      -- Elude Maze place
-    PlatePlace  = 106620300132058,  -- Plate place
+    MainGame    = 6403373529,
+    Brazil      = 7234087065,
+    UntitledTag = 115782629143468,
+    EludeMaze   = 11828384869,
+    PlatePlace  = 106620300132058,
+    OperaGX     = 2380077519,
 }
+
+-- ==================== HELPERS ====================
+local function addCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
+end
+
+local function addStroke(parent, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color = COLORS.border
+    s.Thickness = 1
+    s.Transparency = transparency or 0
+    s.Parent = parent
+    return s
+end
 
 local function teleportToPlace(placeId, statusLabel, pendingText)
     if not placeId or placeId == 0 then
         if statusLabel then
-            statusLabel.Text = "❌ Place ID not set (see PLACE_IDS)"
-            statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+            statusLabel.Text = "❌ Place ID not set"
+            statusLabel.TextColor3 = COLORS.red
         end
         return
     end
     if statusLabel then
         statusLabel.Text = pendingText or "⏳ Teleporting..."
-        statusLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+        statusLabel.TextColor3 = COLORS.warn
     end
-    local ok, err = pcall(function()
+    pcall(function()
         TeleportService:Teleport(placeId, LocalPlayer)
     end)
-    if not ok and statusLabel then
-        statusLabel.Text = "❌ Teleport failed: " .. tostring(err)
-        statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+end
+
+-- Glove ownership check
+local function ownsGlove(gloveName)
+    local folder = LocalPlayer:FindFirstChild("_unlockedGloves")
+    if not folder then return nil end
+    local bv = folder:FindFirstChild(gloveName)
+    if bv and bv:IsA("BoolValue") then return bv.Value end
+    return nil
+end
+
+local function inPlace(placeId)
+    return game.PlaceId == placeId
+end
+
+-- Standardized helper panel builder
+-- Returns: frame, gloveStatusLabel, placeWarningLabel, contentFrame
+local function makeHelperPanel(parent, title, opts)
+    opts = opts or {}
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.94, 0, 0.94, 0)
+    frame.Position = UDim2.new(0.03, 0, 0.03, 0)
+    frame.BackgroundColor3 = COLORS.panel
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    addCorner(frame, 10)
+    addStroke(frame, 0.35)
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(1, -24, 0, 26)
+    titleLbl.Position = UDim2.new(0, 14, 0, 10)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Text = title
+    titleLbl.TextColor3 = COLORS.text
+    titleLbl.TextSize = 15
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Parent = frame
+
+    local curY = 40
+
+    -- Glove status
+    local gloveStatusLbl = nil
+    if opts.gloveName then
+        gloveStatusLbl = Instance.new("TextLabel")
+        gloveStatusLbl.Size = UDim2.new(1, -28, 0, 18)
+        gloveStatusLbl.Position = UDim2.new(0, 14, 0, curY)
+        gloveStatusLbl.BackgroundTransparency = 1
+        gloveStatusLbl.TextSize = 11
+        gloveStatusLbl.Font = Enum.Font.GothamSemibold
+        gloveStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
+        gloveStatusLbl.Parent = frame
+
+        local has = ownsGlove(opts.gloveName)
+        if has == true then
+            gloveStatusLbl.Text = "✓ You have this glove"
+            gloveStatusLbl.TextColor3 = COLORS.green
+        elseif has == false then
+            gloveStatusLbl.Text = "✗ You do not have this glove"
+            gloveStatusLbl.TextColor3 = COLORS.red
+        else
+            gloveStatusLbl.Text = "? Glove status unavailable"
+            gloveStatusLbl.TextColor3 = COLORS.muted
+        end
+        curY = curY + 20
     end
+
+    -- Place warning
+    local placeWarnLbl = nil
+    if opts.requiredPlace then
+        placeWarnLbl = Instance.new("TextLabel")
+        placeWarnLbl.Size = UDim2.new(1, -28, 0, 18)
+        placeWarnLbl.Position = UDim2.new(0, 14, 0, curY)
+        placeWarnLbl.BackgroundTransparency = 1
+        placeWarnLbl.TextSize = 11
+        placeWarnLbl.Font = Enum.Font.GothamBold
+        placeWarnLbl.TextXAlignment = Enum.TextXAlignment.Left
+        placeWarnLbl.Parent = frame
+
+        if inPlace(opts.requiredPlace) then
+            placeWarnLbl.Text = "✓ At required place"
+            placeWarnLbl.TextColor3 = COLORS.green
+        else
+            placeWarnLbl.Text = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
+            placeWarnLbl.TextColor3 = COLORS.warn
+        end
+        curY = curY + 20
+    end
+
+    local contentTop = curY + 6
+
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, -28, 1, -(contentTop + 10))
+    content.Position = UDim2.new(0, 14, 0, contentTop)
+    content.BackgroundTransparency = 1
+    content.Parent = frame
+
+    return frame, gloveStatusLbl, placeWarnLbl, content, contentTop
 end
 
-local function addCorner(parent, radius)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius or 8)
-    corner.Parent = parent
-    return corner
-end
+-- ==================== MAIN GUI ====================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HelperHub"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = PlayerGui
 
-local function addStroke(parent, transparency)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = COLORS.border
-    stroke.Thickness = 1
-    stroke.Transparency = transparency or 0
-    stroke.Parent = parent
-    return stroke
-end
-
--- Main frame (window)
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 740, 0, 520)
 mainFrame.Position = UDim2.new(0.5, -370, 0.5, -260)
@@ -112,8 +203,7 @@ mainFrame.ClipsDescendants = true
 mainFrame.Active = true
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
-
-local mainCorner = addCorner(mainFrame, 11)
+addCorner(mainFrame, 11)
 addStroke(mainFrame, 0.15)
 
 -- Top bar
@@ -138,7 +228,6 @@ titleLabel.Parent = topBar
 
 local dragHandle = Instance.new("Frame")
 dragHandle.Size = UDim2.new(1, -90, 1, 0)
-dragHandle.Position = UDim2.new(0, 0, 0, 0)
 dragHandle.BackgroundTransparency = 1
 dragHandle.Active = true
 dragHandle.ZIndex = 2
@@ -173,14 +262,12 @@ addCorner(closeBtn, 7)
 addStroke(closeBtn, 0.2)
 closeBtn.ZIndex = 4
 
--- Body container
 local bodyContainer = Instance.new("Frame")
 bodyContainer.Size = UDim2.new(1, 0, 1, -44)
 bodyContainer.Position = UDim2.new(0, 0, 0, 44)
 bodyContainer.BackgroundTransparency = 1
 bodyContainer.Parent = mainFrame
 
--- Sidebar
 local sidebar = Instance.new("Frame")
 sidebar.Size = UDim2.new(0, 145, 1, 0)
 sidebar.BackgroundColor3 = COLORS.sidebar
@@ -220,7 +307,6 @@ contentDivider.BackgroundColor3 = COLORS.border
 contentDivider.BorderSizePixel = 0
 contentDivider.Parent = bodyContainer
 
--- Window controls
 local minimized = false
 local originalSize = mainFrame.Size
 
@@ -235,53 +321,41 @@ local function toggleMinimize()
         minimizeBtn.Text = "—"
     end
 end
-
 minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 
--- Dragging
 local dragging = false
-local dragStart
-local startPosition
-
+local dragStart, startPosition
 local function beginDrag(input)
     dragging = true
     dragStart = input.Position
     startPosition = mainFrame.Position
     input.Changed:Connect(function()
-        if input.UserInputState == Enum.UserInputState.End then
-            dragging = false
-        end
+        if input.UserInputState == Enum.UserInputState.End then dragging = false end
     end)
 end
-
 local function updateDrag(input)
     if not dragging then return end
     local delta = input.Position - dragStart
     mainFrame.Position = UDim2.new(
-        startPosition.X.Scale,
-        startPosition.X.Offset + delta.X,
-        startPosition.Y.Scale,
-        startPosition.Y.Offset + delta.Y
+        startPosition.X.Scale, startPosition.X.Offset + delta.X,
+        startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
     )
 end
-
 dragHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
         beginDrag(input)
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch then
         updateDrag(input)
     end
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
+closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
--- Sidebar buttons
 local function createSidebarButton(text, yOffset, parent)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -18, 0, 42)
@@ -296,21 +370,18 @@ local function createSidebarButton(text, yOffset, parent)
     btn.Parent = parent
     addCorner(btn, 7)
     addStroke(btn, 0.65)
-
     btn.MouseEnter:Connect(function()
         if btn.BackgroundColor3 ~= COLORS.sidebarActive then
             btn.BackgroundColor3 = COLORS.buttonHover
             btn.TextColor3 = COLORS.text
         end
     end)
-
     btn.MouseLeave:Connect(function()
         if btn.BackgroundColor3 ~= COLORS.sidebarActive then
             btn.BackgroundColor3 = COLORS.sidebarButton
             btn.TextColor3 = COLORS.muted
         end
     end)
-
     return btn
 end
 
@@ -324,7 +395,6 @@ local function updateSidebarHighlight(activeBtn)
     gloveTabBtn.TextColor3 = (activeBtn == gloveTabBtn) and COLORS.text or COLORS.muted
 end
 
--- Pages
 local homePage = Instance.new("Frame")
 homePage.Size = UDim2.new(1, 0, 1, 0)
 homePage.BackgroundTransparency = 1
@@ -337,7 +407,7 @@ glovePage.BackgroundTransparency = 1
 glovePage.Visible = false
 glovePage.Parent = contentArea
 
--- ==================== HOME PAGE CONTENT ====================
+-- ==================== HOME PAGE ====================
 local homeTitle = Instance.new("TextLabel")
 homeTitle.Size = UDim2.new(1, -40, 0, 34)
 homeTitle.Position = UDim2.new(0, 20, 0, 14)
@@ -349,107 +419,65 @@ homeTitle.Font = Enum.Font.GothamBold
 homeTitle.TextXAlignment = Enum.TextXAlignment.Center
 homeTitle.Parent = homePage
 
--- ---------- Brazil Teleport (place ID) ----------
-local brazilSection = Instance.new("Frame")
-brazilSection.Size = UDim2.new(1, -40, 0, 85)
-brazilSection.Position = UDim2.new(0, 20, 0, 56)
-brazilSection.BackgroundColor3 = COLORS.panel
-brazilSection.BorderSizePixel = 0
-brazilSection.Parent = homePage
-addCorner(brazilSection, 8)
-addStroke(brazilSection, 0.3)
+local function makeHomeCard(yPos, titleText, btnText, initialStatusText, onClick)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, -40, 0, 85)
+    section.Position = UDim2.new(0, 20, 0, yPos)
+    section.BackgroundColor3 = COLORS.panel
+    section.BorderSizePixel = 0
+    section.Parent = homePage
+    addCorner(section, 8)
+    addStroke(section, 0.3)
 
-local brazilTitle = Instance.new("TextLabel")
-brazilTitle.Size = UDim2.new(1, -20, 0, 22)
-brazilTitle.Position = UDim2.new(0, 10, 0, 4)
-brazilTitle.BackgroundTransparency = 1
-brazilTitle.Text = "🇧🇷 Brazil Teleport"
-brazilTitle.TextColor3 = COLORS.text
-brazilTitle.TextSize = 14
-brazilTitle.Font = Enum.Font.GothamBold
-brazilTitle.TextXAlignment = Enum.TextXAlignment.Left
-brazilTitle.Parent = brazilSection
+    local t = Instance.new("TextLabel")
+    t.Size = UDim2.new(1, -20, 0, 22)
+    t.Position = UDim2.new(0, 10, 0, 4)
+    t.BackgroundTransparency = 1
+    t.Text = titleText
+    t.TextColor3 = COLORS.text
+    t.TextSize = 14
+    t.Font = Enum.Font.GothamBold
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Parent = section
 
-local brazilBtn = Instance.new("TextButton")
-brazilBtn.Size = UDim2.new(0, 200, 0, 30)
-brazilBtn.Position = UDim2.new(0.5, -100, 0, 28)
-brazilBtn.BackgroundColor3 = COLORS.button
-brazilBtn.AutoButtonColor = false
-brazilBtn.Text = "Teleport to Brazil Place"
-brazilBtn.TextColor3 = COLORS.text
-brazilBtn.TextSize = 13
-brazilBtn.Font = Enum.Font.GothamSemibold
-brazilBtn.BorderSizePixel = 0
-brazilBtn.Parent = brazilSection
-addCorner(brazilBtn, 6)
-addStroke(brazilBtn, 0.3)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 220, 0, 30)
+    b.Position = UDim2.new(0.5, -110, 0, 28)
+    b.BackgroundColor3 = COLORS.button
+    b.AutoButtonColor = false
+    b.Text = btnText
+    b.TextColor3 = COLORS.text
+    b.TextSize = 13
+    b.Font = Enum.Font.GothamSemibold
+    b.BorderSizePixel = 0
+    b.Parent = section
+    addCorner(b, 6)
+    addStroke(b, 0.3)
 
-local brazilStatus = Instance.new("TextLabel")
-brazilStatus.Size = UDim2.new(1, -20, 0, 20)
-brazilStatus.Position = UDim2.new(0, 10, 0, 60)
-brazilStatus.BackgroundTransparency = 1
-brazilStatus.Text = "Teleports you straight to the Brazil place."
-brazilStatus.TextColor3 = COLORS.muted
-brazilStatus.TextSize = 12
-brazilStatus.Font = Enum.Font.Gotham
-brazilStatus.TextXAlignment = Enum.TextXAlignment.Center
-brazilStatus.Parent = brazilSection
+    local s = Instance.new("TextLabel")
+    s.Size = UDim2.new(1, -20, 0, 20)
+    s.Position = UDim2.new(0, 10, 0, 60)
+    s.BackgroundTransparency = 1
+    s.Text = initialStatusText
+    s.TextColor3 = COLORS.muted
+    s.TextSize = 12
+    s.Font = Enum.Font.Gotham
+    s.TextXAlignment = Enum.TextXAlignment.Center
+    s.Parent = section
 
-brazilBtn.MouseButton1Click:Connect(function()
-    teleportToPlace(PLACE_IDS.Brazil, brazilStatus, "⏳ Teleporting to Brazil...")
-end)
+    b.MouseButton1Click:Connect(function() onClick(s) end)
+    return b, s
+end
 
--- ---------- Main Game Teleport ----------
-local mainGameSection = Instance.new("Frame")
-mainGameSection.Size = UDim2.new(1, -40, 0, 85)
-mainGameSection.Position = UDim2.new(0, 20, 0, 147)
-mainGameSection.BackgroundColor3 = COLORS.panel
-mainGameSection.BorderSizePixel = 0
-mainGameSection.Parent = homePage
-addCorner(mainGameSection, 8)
-addStroke(mainGameSection, 0.3)
+makeHomeCard(56, "🇧🇷 Brazil Teleport", "Teleport to Brazil Place",
+    "Teleports you straight to the Brazil place.",
+    function(s) teleportToPlace(PLACE_IDS.Brazil, s, "⏳ Teleporting to Brazil...") end)
 
-local mainGameTitle = Instance.new("TextLabel")
-mainGameTitle.Size = UDim2.new(1, -20, 0, 22)
-mainGameTitle.Position = UDim2.new(0, 10, 0, 4)
-mainGameTitle.BackgroundTransparency = 1
-mainGameTitle.Text = "🏠 Main Game"
-mainGameTitle.TextColor3 = COLORS.text
-mainGameTitle.TextSize = 14
-mainGameTitle.Font = Enum.Font.GothamBold
-mainGameTitle.TextXAlignment = Enum.TextXAlignment.Left
-mainGameTitle.Parent = mainGameSection
+makeHomeCard(147, "🏠 Main Game", "Teleport to Main Game",
+    "Sends you back to the Slap Battles main game.",
+    function(s) teleportToPlace(PLACE_IDS.MainGame, s, "⏳ Returning to main game...") end)
 
-local mainGameBtn = Instance.new("TextButton")
-mainGameBtn.Size = UDim2.new(0, 200, 0, 30)
-mainGameBtn.Position = UDim2.new(0.5, -100, 0, 28)
-mainGameBtn.BackgroundColor3 = COLORS.button
-mainGameBtn.AutoButtonColor = false
-mainGameBtn.Text = "Teleport to Main Game"
-mainGameBtn.TextColor3 = COLORS.text
-mainGameBtn.TextSize = 13
-mainGameBtn.Font = Enum.Font.GothamSemibold
-mainGameBtn.BorderSizePixel = 0
-mainGameBtn.Parent = mainGameSection
-addCorner(mainGameBtn, 6)
-addStroke(mainGameBtn, 0.3)
-
-local mainGameStatus = Instance.new("TextLabel")
-mainGameStatus.Size = UDim2.new(1, -20, 0, 20)
-mainGameStatus.Position = UDim2.new(0, 10, 0, 60)
-mainGameStatus.BackgroundTransparency = 1
-mainGameStatus.Text = "Sends you back to the Slap Battles main game."
-mainGameStatus.TextColor3 = COLORS.muted
-mainGameStatus.TextSize = 12
-mainGameStatus.Font = Enum.Font.Gotham
-mainGameStatus.TextXAlignment = Enum.TextXAlignment.Center
-mainGameStatus.Parent = mainGameSection
-
-mainGameBtn.MouseButton1Click:Connect(function()
-    teleportToPlace(PLACE_IDS.MainGame, mainGameStatus, "⏳ Returning to main game...")
-end)
-
--- ---------- Keypad Section ----------
+-- Keypad
 local keypadSection = Instance.new("Frame")
 keypadSection.Size = UDim2.new(1, -40, 0, 220)
 keypadSection.Position = UDim2.new(0, 20, 0, 238)
@@ -517,42 +545,38 @@ teleportKeypadBtn.Parent = keypadSection
 addCorner(teleportKeypadBtn, 6)
 addStroke(teleportKeypadBtn, 0.3)
 
-local function updateKeyStatus(text, color)
-    keyStatus.Text = text
-    if color then keyStatus.TextColor3 = color end
-end
-local function updateKeyCode(code) keyCode.Text = "Code: "..code end
-local function updateKeyInfo(count) keyInfo.Text = "Players: "..count end
-
 local function teleportToBackpiece()
     local keypad = workspace:FindFirstChild("Keypad")
-    if not keypad then updateKeyStatus("Keypad not found!", Color3.fromRGB(255,50,50)); return false end
+    if not keypad then return false end
     local backpiece = keypad:FindFirstChild("Backpiece")
-    if not backpiece or not backpiece:IsA("BasePart") then updateKeyStatus("Backpiece missing!", Color3.fromRGB(255,50,50)); return false end
+    if not backpiece or not backpiece:IsA("BasePart") then return false end
     local char = LocalPlayer.Character
     if not char then return false end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return false end
     root.CFrame = backpiece.CFrame + Vector3.new(0,3,0)
-    updateKeyStatus("Teleported!", Color3.fromRGB(50,255,50))
     return true
 end
 
 local function refreshKeypad()
     local count = Players.NumPlayers
-    local codeNumber = (25 * count) + 1093
-    updateKeyCode(tostring(codeNumber))
-    updateKeyInfo(count)
+    keyCode.Text = "Code: "..tostring((25 * count) + 1093)
+    keyInfo.Text = "Players: "..count
 end
 
 teleportKeypadBtn.MouseButton1Click:Connect(function()
     refreshKeypad()
-    teleportToBackpiece()
+    if teleportToBackpiece() then
+        keyStatus.Text = "Teleported!"
+        keyStatus.TextColor3 = COLORS.green
+    else
+        keyStatus.Text = "Teleport failed"
+        keyStatus.TextColor3 = COLORS.red
+    end
 end)
 Players.PlayerAdded:Connect(refreshKeypad)
 Players.PlayerRemoving:Connect(refreshKeypad)
 refreshKeypad()
-updateKeyStatus("Ready - press Teleport")
 
 -- ==================== GLOVE PAGE SUB-TABS ====================
 local subTabBar = Instance.new("Frame")
@@ -563,23 +587,25 @@ subTabBar.BorderSizePixel = 0
 subTabBar.Parent = glovePage
 
 local subTabButtons = {}
-local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter", "Plate", "Riftshot", "Plunger", "OperaGX"}
+local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Plate", "Riftshot", "Plunger", "WIP"}
+
+local tabWidth = 58
+local tabSpacing = 62
 
 for i, name in ipairs(subTabNames) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 52, 1, -8)
-    btn.Position = UDim2.new(0, 4 + (i-1)*56, 0, 4)
+    btn.Size = UDim2.new(0, tabWidth, 1, -8)
+    btn.Position = UDim2.new(0, 4 + (i-1)*tabSpacing, 0, 4)
     btn.BackgroundColor3 = (i == 1) and COLORS.sidebarActive or COLORS.sidebarButton
     btn.Text = name
     btn.TextColor3 = (i == 1) and COLORS.text or COLORS.muted
-    btn.TextSize = 9
+    btn.TextSize = 10
     btn.Font = Enum.Font.GothamSemibold
     btn.AutoButtonColor = false
     btn.BorderSizePixel = 0
     btn.Parent = subTabBar
     addCorner(btn, 7)
     addStroke(btn, 0.45)
-
     btn.MouseEnter:Connect(function()
         if btn.BackgroundColor3 ~= COLORS.sidebarActive then
             btn.BackgroundColor3 = COLORS.buttonHover
@@ -592,7 +618,6 @@ for i, name in ipairs(subTabNames) do
             btn.TextColor3 = COLORS.muted
         end
     end)
-
     subTabButtons[name] = btn
 end
 
@@ -602,92 +627,47 @@ subPageContainer.Position = UDim2.new(0, 12, 0, 54)
 subPageContainer.BackgroundTransparency = 1
 subPageContainer.Parent = glovePage
 
--- Create sub-pages
-local debugPage = Instance.new("Frame")
-debugPage.Size = UDim2.new(1, 0, 1, 0)
-debugPage.BackgroundTransparency = 1
-debugPage.Visible = true
-debugPage.Parent = subPageContainer
+-- Create pages
+local pages = {}
+for _, name in ipairs(subTabNames) do
+    local p = Instance.new("Frame")
+    p.Size = UDim2.new(1, 0, 1, 0)
+    p.BackgroundTransparency = 1
+    p.Visible = false
+    p.Parent = subPageContainer
+    pages[name] = p
+end
+pages["Debug"].Visible = true
 
-local eludePage = Instance.new("Frame")
-eludePage.Size = UDim2.new(1, 0, 1, 0)
-eludePage.BackgroundTransparency = 1
-eludePage.Visible = false
-eludePage.Parent = subPageContainer
-
-local boxingPage = Instance.new("Frame")
-boxingPage.Size = UDim2.new(1, 0, 1, 0)
-boxingPage.BackgroundTransparency = 1
-boxingPage.Visible = false
-boxingPage.Parent = subPageContainer
-
-local fanPage = Instance.new("Frame")
-fanPage.Size = UDim2.new(1, 0, 1, 0)
-fanPage.BackgroundTransparency = 1
-fanPage.Visible = false
-fanPage.Parent = subPageContainer
-
-local untitledPage = Instance.new("Frame")
-untitledPage.Size = UDim2.new(1, 0, 1, 0)
-untitledPage.BackgroundTransparency = 1
-untitledPage.Visible = false
-untitledPage.Parent = subPageContainer
-
-local counterPage = Instance.new("Frame")
-counterPage.Size = UDim2.new(1, 0, 1, 0)
-counterPage.BackgroundTransparency = 1
-counterPage.Visible = false
-counterPage.Parent = subPageContainer
-
-local platePage = Instance.new("Frame")
-platePage.Size = UDim2.new(1, 0, 1, 0)
-platePage.BackgroundTransparency = 1
-platePage.Visible = false
-platePage.Parent = subPageContainer
-
-local riftshotPage = Instance.new("Frame")
-riftshotPage.Size = UDim2.new(1, 0, 1, 0)
-riftshotPage.BackgroundTransparency = 1
-riftshotPage.Visible = false
-riftshotPage.Parent = subPageContainer
-
-local plungerPage = Instance.new("Frame")
-plungerPage.Size = UDim2.new(1, 0, 1, 0)
-plungerPage.BackgroundTransparency = 1
-plungerPage.Visible = false
-plungerPage.Parent = subPageContainer
-
-local operaGXPage = Instance.new("Frame")
-operaGXPage.Size = UDim2.new(1, 0, 1, 0)
-operaGXPage.BackgroundTransparency = 1
-operaGXPage.Visible = false
-operaGXPage.Parent = subPageContainer
-
--- Keybind management
+-- ==================== KEYBIND MANAGEMENT ====================
 local activeKeybinds = {}
 local eludeMazeStartFunc = nil
 local counterLeverFunc = nil
 local counterFlyFunc = nil
 local counterGloveFunc = nil
 local counterHideFunc = nil
+local currentWipSub = "Counter"
 
-local function setActiveKeybinds(pageName)
-    for _, conn in pairs(activeKeybinds) do
-        if conn then conn:Disconnect() end
+local function clearKeybinds()
+    for _, c in pairs(activeKeybinds) do
+        if c then c:Disconnect() end
     end
     activeKeybinds = {}
+end
+
+local function setActiveKeybinds(pageName)
+    clearKeybinds()
 
     if pageName == "Elude" then
-        local conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            if gameProcessed then return end
-            if input.KeyCode == Enum.KeyCode.RightControl then
-                if eludeMazeStartFunc then eludeMazeStartFunc() end
+        table.insert(activeKeybinds, UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode == Enum.KeyCode.RightControl and eludeMazeStartFunc then
+                eludeMazeStartFunc()
             end
-        end)
-        activeKeybinds[#activeKeybinds+1] = conn
-    elseif pageName == "Counter" then
-        local conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            if gameProcessed then return end
+        end))
+    elseif pageName == "WIP" and currentWipSub == "Counter" then
+        table.insert(activeKeybinds, UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
             if input.KeyCode == Enum.KeyCode.R then
                 if counterLeverFunc then counterLeverFunc() end
             elseif input.KeyCode == Enum.KeyCode.H then
@@ -697,965 +677,739 @@ local function setActiveKeybinds(pageName)
             elseif input.KeyCode == Enum.KeyCode.F then
                 if counterHideFunc then counterHideFunc() end
             end
-        end)
-        activeKeybinds[#activeKeybinds+1] = conn
+        end))
     end
 end
 
 local function showSubPage(pageName)
-    debugPage.Visible = (pageName == "Debug")
-    eludePage.Visible = (pageName == "Elude")
-    boxingPage.Visible = (pageName == "Boxing")
-    fanPage.Visible = (pageName == "Fan")
-    untitledPage.Visible = (pageName == "Untitled")
-    counterPage.Visible = (pageName == "Counter")
-    platePage.Visible = (pageName == "Plate")
-    riftshotPage.Visible = (pageName == "Riftshot")
-    plungerPage.Visible = (pageName == "Plunger")
-    operaGXPage.Visible = (pageName == "OperaGX")
-
+    for name, p in pairs(pages) do
+        p.Visible = (name == pageName)
+    end
     for name, btn in pairs(subTabButtons) do
         btn.BackgroundColor3 = (name == pageName) and COLORS.sidebarActive or COLORS.sidebarButton
         btn.TextColor3 = (name == pageName) and COLORS.text or COLORS.muted
     end
-
     setActiveKeybinds(pageName)
 end
 
-subTabButtons["Debug"].MouseButton1Click:Connect(function() showSubPage("Debug") end)
-subTabButtons["Elude"].MouseButton1Click:Connect(function() showSubPage("Elude") end)
-subTabButtons["Boxing"].MouseButton1Click:Connect(function() showSubPage("Boxing") end)
-subTabButtons["Fan"].MouseButton1Click:Connect(function() showSubPage("Fan") end)
-subTabButtons["Untitled"].MouseButton1Click:Connect(function() showSubPage("Untitled") end)
-subTabButtons["Counter"].MouseButton1Click:Connect(function() showSubPage("Counter") end)
-subTabButtons["Plate"].MouseButton1Click:Connect(function() showSubPage("Plate") end)
-subTabButtons["Riftshot"].MouseButton1Click:Connect(function() showSubPage("Riftshot") end)
-subTabButtons["Plunger"].MouseButton1Click:Connect(function() showSubPage("Plunger") end)
-subTabButtons["OperaGX"].MouseButton1Click:Connect(function() showSubPage("OperaGX") end)
+for name, btn in pairs(subTabButtons) do
+    btn.MouseButton1Click:Connect(function() showSubPage(name) end)
+end
 
--- ==================== LOAD HELPERS ====================
--- Debug Helper
+-- ==================== HELPER: simple button row ====================
+local function makeButton(parent, text, y, color, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, 0, 0, 38)
+    b.Position = UDim2.new(0, 0, 0, y)
+    b.BackgroundColor3 = color or COLORS.sidebarButton
+    b.AutoButtonColor = false
+    b.Text = text
+    b.TextColor3 = COLORS.text
+    b.TextSize = 13
+    b.Font = Enum.Font.GothamSemibold
+    b.BorderSizePixel = 0
+    b.Parent = parent
+    addCorner(b, 6)
+    addStroke(b, 0.4)
+    b.MouseButton1Click:Connect(onClick)
+    return b
+end
+
+-- ==================== DEBUG HELPER ====================
 local function loadDebugHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.9, 0, 0.9, 0)
-    frame.Position = UDim2.new(0.05, 0, 0.05, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "Debug Glove Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "Debug Glove Helper", {
+        gloveName = "Debug",
+    })
 
     local codeLabel = Instance.new("TextLabel")
-    codeLabel.Size = UDim2.new(1, -20, 0, 30)
-    codeLabel.Position = UDim2.new(0, 10, 0, 50)
+    codeLabel.Size = UDim2.new(1, 0, 0, 24)
+    codeLabel.Position = UDim2.new(0, 0, 0, 0)
     codeLabel.BackgroundTransparency = 1
     codeLabel.Text = "Code: ----"
-    codeLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    codeLabel.TextColor3 = COLORS.green
     codeLabel.TextSize = 14
     codeLabel.Font = Enum.Font.GothamBold
-    codeLabel.Parent = frame
+    codeLabel.Parent = content
 
     local digitStatus = {}
     for i = 1, 4 do
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.25, -10, 0, 25)
-        lbl.Position = UDim2.new((i-1)*0.25, 10, 0, 90)
+        lbl.Size = UDim2.new(0.25, -6, 0, 22)
+        lbl.Position = UDim2.new((i-1)*0.25, 0, 0, 30)
         lbl.BackgroundTransparency = 1
         lbl.Text = "D"..i..": ?"
         lbl.TextColor3 = COLORS.muted
         lbl.TextSize = 12
         lbl.Font = Enum.Font.Gotham
-        lbl.Parent = frame
+        lbl.Parent = content
         digitStatus[i] = lbl
     end
 
     local gloveNames = {"Extended", "Killerfish", "Manspider", "OneMillionBricks", "TABLE"}
-    local gloveButtons = {}
     for i, name in ipairs(gloveNames) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.8, 0, 0, 34)
-        btn.Position = UDim2.new(0.1, 0, 0, 130 + (i-1)*39)
-        btn.BackgroundColor3 = COLORS.sidebarButton
-        btn.AutoButtonColor = false
-        btn.Text = "Teleport to " .. name
-        btn.TextColor3 = COLORS.text
-        btn.TextSize = 13
-        btn.Font = Enum.Font.GothamSemibold
-        btn.BorderSizePixel = 0
-        btn.Parent = frame
-        addCorner(btn, 6)
-        addStroke(btn, 0.4)
-        gloveButtons[name] = btn
+        makeButton(content, "Teleport to "..name, 60 + (i-1)*42, COLORS.sidebarButton, function()
+            local dr = workspace:FindFirstChild("Debug Room")
+            if not dr then return end
+            local uc = dr:FindFirstChild("UncollectedGloves")
+            if not uc then return end
+            local f = uc:FindFirstChild(name)
+            if not f then return end
+            local part = f:FindFirstChildWhichIsA("BasePart")
+            if not part then return end
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.CFrame = part.CFrame * CFrame.new(0, 1.5, 3) end
+        end)
     end
 
-    local tpKeypad = Instance.new("TextButton")
-    tpKeypad.Size = UDim2.new(0.8, 0, 0, 35)
-    tpKeypad.Position = UDim2.new(0.1, 0, 0, 130 + #gloveNames*39 + 10)
-    tpKeypad.BackgroundColor3 = COLORS.button
-    tpKeypad.AutoButtonColor = false
-    tpKeypad.Text = "Teleport to Keypad"
-    tpKeypad.TextColor3 = COLORS.text
-    tpKeypad.TextSize = 13
-    tpKeypad.Font = Enum.Font.GothamSemibold
-    tpKeypad.BorderSizePixel = 0
-    tpKeypad.Parent = frame
-    addCorner(tpKeypad, 6)
-    addStroke(tpKeypad, 0.3)
-
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -20, 0, 30)
-    statusLabel.Position = UDim2.new(0, 10, 1, -40)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Click a glove button to teleport."
-    statusLabel.TextColor3 = COLORS.muted
-    statusLabel.TextSize = 12
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.Parent = frame
-
-    local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    if not Character or not Character.Parent then
-        Character = LocalPlayer.CharacterAdded:Wait()
-    end
-    local DebugRoom = workspace:FindFirstChild("Debug Room")
-    if not DebugRoom then
-        statusLabel.Text = "'Debug Room' not found!"
-        return
-    end
-
-    local function getDigit1()
-        local duckTable1 = DebugRoom:FindFirstChild("DuckTable")
-        if not duckTable1 then return nil, false end
-        local duckTable2 = duckTable1:FindFirstChild("DuckTable")
-        if not duckTable2 then return nil, false end
-        local count = 0
-        for _, child in ipairs(duckTable2:GetChildren()) do
-            if child.Name == "Duck" then count = count + 1 end
-        end
-        return count, true
-    end
-
-    local function isGloveCollected(gloveName)
-        local uncollected = DebugRoom:FindFirstChild("UncollectedGloves")
-        if not uncollected then return true end
-        return not uncollected:FindFirstChild(gloveName)
-    end
-
-    local function allGlovesCollected()
-        for _, name in ipairs(gloveNames) do
-            if not isGloveCollected(name) then return false end
-        end
-        return true
-    end
-
-    local function getDigit2()
-        if not allGlovesCollected() then return nil, false end
-        local adminGloves = DebugRoom:FindFirstChild("AdminGloves")
-        if not adminGloves then return nil, false end
-        local glovesCode = adminGloves:FindFirstChild("GlovesCode")
-        if not glovesCode then return nil, false end
-        local surfaceGui = glovesCode:FindFirstChild("SurfaceGui")
-        if not surfaceGui then return nil, false end
-        local adminNumber = surfaceGui:FindFirstChild("AdminNumber")
-        if not adminNumber then return nil, false end
-        local digit = adminNumber:GetAttribute("ContentText")
-        if digit then
-            digit = tonumber(digit)
-            if digit then return digit, true end
-        end
-        if adminNumber:IsA("TextLabel") or adminNumber:IsA("TextButton") then
-            local num = tonumber(adminNumber.Text)
-            if num then return num, true end
-        end
-        return nil, false
-    end
-
-    local function getDigit3()
-        local maze = DebugRoom:FindFirstChild("Maze")
-        if not maze then return nil, false end
-        local prize = maze:FindFirstChild("MazePrize")
-        if not prize then return nil, false end
-        local surfaceGui = prize:FindFirstChild("SurfaceGui")
-        if not surfaceGui then return nil, false end
-        local mazeNumber = surfaceGui:FindFirstChild("MazeNumber")
-        if not mazeNumber then return nil, false end
-        local digit = mazeNumber:GetAttribute("ContentText")
-        if digit then
-            digit = tonumber(digit)
-            if digit then return digit, true end
-        end
-        if mazeNumber:IsA("TextLabel") or mazeNumber:IsA("TextButton") then
-            local num = tonumber(mazeNumber.Text)
-            if num then return num, true end
-        end
-        return nil, false
-    end
-
-    local function getDigit4() return 7, true end
-
-    local function teleportToGlove(gloveName)
-        local uncollected = DebugRoom:FindFirstChild("UncollectedGloves")
-        if not uncollected then statusLabel.Text = "UncollectedGloves not found."; return end
-        local folder = uncollected:FindFirstChild(gloveName)
-        if not folder then statusLabel.Text = gloveName.." already collected."; return end
-        local glovePart = folder:FindFirstChildWhichIsA("BasePart")
-        if not glovePart then statusLabel.Text = "No part found."; return end
-        local hrp = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Torso")
-        if not hrp then statusLabel.Text = "Character not ready."; return end
-        hrp.CFrame = glovePart.CFrame * CFrame.new(0, 1.5, 3)
-        statusLabel.Text = "Teleported to "..gloveName
-    end
-
-    for name, btn in pairs(gloveButtons) do
-        btn.MouseButton1Click:Connect(function() teleportToGlove(name) end)
-    end
-
-    tpKeypad.MouseButton1Click:Connect(function()
-        local keypad = DebugRoom:FindFirstChild("Keypad")
-        if not keypad then statusLabel.Text = "Keypad not found."; return end
-        local hrp = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("Torso")
-        if not hrp then statusLabel.Text = "Character not ready."; return end
-        local keypadPart = keypad:IsA("BasePart") and keypad or keypad:FindFirstChildWhichIsA("BasePart")
-        if not keypadPart then statusLabel.Text = "Keypad has no part."; return end
-        hrp.CFrame = keypadPart.CFrame * CFrame.new(0, 2, 3)
-        statusLabel.Text = "Teleported to Keypad"
+    makeButton(content, "Teleport to Keypad", 60 + #gloveNames*42 + 6, COLORS.button, function()
+        local dr = workspace:FindFirstChild("Debug Room")
+        if not dr then return end
+        local kp = dr:FindFirstChild("Keypad")
+        if not kp then return end
+        local part = kp:IsA("BasePart") and kp or kp:FindFirstChildWhichIsA("BasePart")
+        if not part then return end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = part.CFrame * CFrame.new(0, 2, 3) end
     end)
 
-    local function updateUI()
-        local d1, f1 = getDigit1()
-        local d2, f2 = getDigit2()
-        local d3, f3 = getDigit3()
-        local d4, f4 = getDigit4()
-        local digits = {d1, d2, d3, d4}
-        local found = {f1, f2, f3, f4}
-        local codeString = ""
-        for i = 1, 4 do
-            if found[i] and digits[i] then
-                local num = tonumber(digits[i])
-                if num then
-                    codeString = codeString .. num
-                    digitStatus[i].Text = "D"..i..": "..num.." ✓"
-                    digitStatus[i].TextColor3 = Color3.fromRGB(0, 255, 0)
-                else
-                    codeString = codeString .. "?"
-                    digitStatus[i].Text = "D"..i..": ?"
-                    digitStatus[i].TextColor3 = Color3.fromRGB(255, 200, 0)
-                end
-            else
-                codeString = codeString .. "?"
-                digitStatus[i].Text = "D"..i..": ?"
-                digitStatus[i].TextColor3 = Color3.fromRGB(255, 80, 80)
-            end
-        end
-        codeLabel.Text = "Code: " .. codeString
-        codeLabel.TextColor3 = (#codeString == 4 and not codeString:find("%?")) and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,200,0)
-    end
-
-    updateUI()
+    -- Simple code updater
     task.spawn(function()
         while frame.Parent do
             task.wait(2)
-            updateUI()
+            local dr = workspace:FindFirstChild("Debug Room")
+            if not dr then continue end
+            -- digit 1
+            local dt = dr:FindFirstChild("DuckTable")
+            dt = dt and dt:FindFirstChild("DuckTable")
+            local d1 = "?"
+            if dt then
+                local n = 0
+                for _, c in ipairs(dt:GetChildren()) do
+                    if c.Name == "Duck" then n = n + 1 end
+                end
+                d1 = tostring(n)
+            end
+            digitStatus[1].Text = "D1: "..d1
+            digitStatus[1].TextColor3 = d1 ~= "?" and COLORS.green or COLORS.red
+            digitStatus[4].Text = "D4: 7"
+            digitStatus[4].TextColor3 = COLORS.green
+            codeLabel.Text = "Code: "..d1.."???7"
         end
     end)
 end
 
--- ==================== ELUDE HELPER (updated: TP to Maze added) ====================
+-- ==================== ELUDE HELPER (with place check) ====================
 local function loadEludeHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.9, 0, 0.9, 0)
-    frame.Position = UDim2.new(0.05, 0, 0.05, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
+    local frame, gloveLbl, placeLbl, content = makeHelperPanel(parent, "🌀 Elude Maze Helper", {
+        gloveName = "Elude",
+        requiredPlace = PLACE_IDS.EludeMaze,
+    })
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "🌀 Elude Maze Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Status: Idle"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
-    local mazeStatus = Instance.new("TextLabel")
-    mazeStatus.Size = UDim2.new(1, -20, 0, 20)
-    mazeStatus.Position = UDim2.new(0, 10, 0, 50)
-    mazeStatus.BackgroundTransparency = 1
-    mazeStatus.Text = "Status: Idle"
-    mazeStatus.TextColor3 = COLORS.muted
-    mazeStatus.TextSize = 12
-    mazeStatus.Font = Enum.Font.Gotham
-    mazeStatus.TextXAlignment = Enum.TextXAlignment.Left
-    mazeStatus.Parent = frame
-
-    local mazeInfo = Instance.new("TextLabel")
-    mazeInfo.Size = UDim2.new(1, -20, 0, 20)
-    mazeInfo.Position = UDim2.new(0, 10, 0, 75)
-    mazeInfo.BackgroundTransparency = 1
-    mazeInfo.Text = "Collectables: 0 found"
-    mazeInfo.TextColor3 = COLORS.muted
-    mazeInfo.TextSize = 12
-    mazeInfo.Font = Enum.Font.Gotham
-    mazeInfo.TextXAlignment = Enum.TextXAlignment.Left
-    mazeInfo.Parent = frame
-
-    local mazeProgress = Instance.new("TextLabel")
-    mazeProgress.Size = UDim2.new(1, -20, 0, 20)
-    mazeProgress.Position = UDim2.new(0, 10, 0, 100)
-    mazeProgress.BackgroundTransparency = 1
-    mazeProgress.Text = "Progress: 0/0"
-    mazeProgress.TextColor3 = COLORS.muted
-    mazeProgress.TextSize = 12
-    mazeProgress.Font = Enum.Font.Gotham
-    mazeProgress.TextXAlignment = Enum.TextXAlignment.Left
-    mazeProgress.Parent = frame
-
-    -- NEW: TP to Elude Maze place
-    local tpMazeBtn = Instance.new("TextButton")
-    tpMazeBtn.Size = UDim2.new(0, 200, 0, 36)
-    tpMazeBtn.Position = UDim2.new(0.5, -100, 0, 128)
-    tpMazeBtn.BackgroundColor3 = COLORS.purple
-    tpMazeBtn.AutoButtonColor = false
-    tpMazeBtn.Text = "🌐 TP to Elude Maze Place"
-    tpMazeBtn.TextColor3 = COLORS.text
-    tpMazeBtn.TextSize = 13
-    tpMazeBtn.Font = Enum.Font.GothamSemibold
-    tpMazeBtn.BorderSizePixel = 0
-    tpMazeBtn.Parent = frame
-    addCorner(tpMazeBtn, 6)
-    addStroke(tpMazeBtn, 0.3)
-
-    local mazeBtn = Instance.new("TextButton")
-    mazeBtn.Size = UDim2.new(0, 150, 0, 40)
-    mazeBtn.Position = UDim2.new(0.5, -75, 0, 175)
-    mazeBtn.BackgroundColor3 = COLORS.button
-    mazeBtn.AutoButtonColor = false
-    mazeBtn.Text = "Start Maze"
-    mazeBtn.TextColor3 = COLORS.text
-    mazeBtn.TextSize = 13
-    mazeBtn.Font = Enum.Font.GothamSemibold
-    mazeBtn.BorderSizePixel = 0
-    mazeBtn.Parent = frame
-    addCorner(mazeBtn, 6)
-    addStroke(mazeBtn, 0.3)
-
-    local gloveBtn = Instance.new("TextButton")
-    gloveBtn.Size = UDim2.new(0, 150, 0, 40)
-    gloveBtn.Position = UDim2.new(0.5, -75, 0, 225)
-    gloveBtn.BackgroundColor3 = COLORS.button
-    gloveBtn.AutoButtonColor = false
-    gloveBtn.Text = "Teleport to Glove"
-    gloveBtn.TextColor3 = COLORS.text
-    gloveBtn.TextSize = 13
-    gloveBtn.Font = Enum.Font.GothamSemibold
-    gloveBtn.BorderSizePixel = 0
-    gloveBtn.Parent = frame
-    addCorner(gloveBtn, 6)
-    addStroke(gloveBtn, 0.3)
-
-    local collectableFolder = nil
-    local collectableParts = {}
-    local isMazeRunning = false
-
-    local function updateMazeStatus(text, color)
-        mazeStatus.Text = text
-        if color then mazeStatus.TextColor3 = color end
-    end
-    local function updateMazeInfo(found, total)
-        mazeInfo.Text = "Collectables: "..found.." found"
-        mazeProgress.Text = "Progress: "..found.."/"..total
-    end
-    local function scanCollectables()
-        collectableFolder = workspace:FindFirstChild("Collectable")
-        if not collectableFolder then updateMazeStatus("Folder not found!", Color3.fromRGB(255,50,50)); return false end
-        local parts = {}
-        for _, child in ipairs(collectableFolder:GetChildren()) do
-            if child:IsA("BasePart") then table.insert(parts, child) end
-        end
-        collectableParts = parts
-        updateMazeInfo(0, #parts)
-        if #parts == 0 then updateMazeStatus("No parts!", Color3.fromRGB(255,200,0)); return false end
-        updateMazeStatus("Ready", Color3.fromRGB(50,255,50))
-        return true
-    end
-
-    local function teleportToPart(part)
-        local char = LocalPlayer.Character
-        if not char then return false end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return false end
-        root.CFrame = part.CFrame + Vector3.new(0,2,0)
-        return true
-    end
-
-    local function teleportToGlove()
-        local ruins = workspace:FindFirstChild("ruins")
-        if not ruins then updateMazeStatus("ruins not found", Color3.fromRGB(255,50,50)); return false end
-        local elude = ruins:FindFirstChild("Elude")
-        if not elude then updateMazeStatus("Elude not found", Color3.fromRGB(255,50,50)); return false end
-        local glovePart = elude:FindFirstChild("Glove")
-        if not glovePart or not glovePart:IsA("BasePart") then updateMazeStatus("Glove part not found", Color3.fromRGB(255,50,50)); return false end
-        local char = LocalPlayer.Character
-        if not char then return false end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return false end
-        root.CFrame = glovePart.CFrame + Vector3.new(0,2,0)
-        updateMazeStatus("Teleported to Glove! ✅", Color3.fromRGB(50,255,50))
-        return true
-    end
-
-    local function runMaze()
-        if isMazeRunning then return end
-        isMazeRunning = true
-        mazeBtn.Text = "⏳ Running..."
-        scanCollectables()
-        local total = #collectableParts
-        if total == 0 then isMazeRunning = false; return end
-        for i, part in ipairs(collectableParts) do
-            updateMazeStatus("Part "..i.."/"..total, Color3.fromRGB(255,200,0))
-            teleportToPart(part)
-            updateMazeInfo(i, total)
-            task.wait(1)
-        end
-        updateMazeStatus("Going to Glove...", Color3.fromRGB(255,200,100))
-        local success = teleportToGlove()
-        if success then
-            updateMazeStatus("Done! ✅", Color3.fromRGB(50,255,50))
-        else
-            updateMazeStatus("Glove not found", Color3.fromRGB(255,200,0))
-        end
-        mazeBtn.Text = "Start Maze"
-        isMazeRunning = false
-    end
-
-    local function startMaze()
-        if isMazeRunning then return end
-        scanCollectables()
-        if #collectableParts > 0 then
-            task.spawn(runMaze)
-        end
-    end
-
-    tpMazeBtn.MouseButton1Click:Connect(function()
-        updateMazeStatus("⏳ Teleporting to Elude Maze place...", Color3.fromRGB(255, 200, 100))
-        TeleportService:Teleport(PLACE_IDS.EludeMaze, LocalPlayer)
+    makeButton(content, "🌐 TP to Elude Maze Place", 30, COLORS.purple, function()
+        teleportToPlace(PLACE_IDS.EludeMaze, statusLbl, "⏳ Teleporting to Elude Maze...")
     end)
 
-    mazeBtn.MouseButton1Click:Connect(startMaze)
-    gloveBtn.MouseButton1Click:Connect(teleportToGlove)
+    local mazeBtn = makeButton(content, "▶ Start Maze", 74, COLORS.button, function()
+        if not inPlace(PLACE_IDS.EludeMaze) then
+            statusLbl.Text = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
+            statusLbl.TextColor3 = COLORS.warn
+            return
+        end
+        statusLbl.Text = "Starting maze..."
+        statusLbl.TextColor3 = COLORS.green
+        -- Existing maze logic: scan and teleport to collectables
+        task.spawn(function()
+            local cf = workspace:FindFirstChild("Collectable")
+            if not cf then statusLbl.Text = "Collectable folder missing"; return end
+            local parts = {}
+            for _, c in ipairs(cf:GetChildren()) do
+                if c:IsA("BasePart") then table.insert(parts, c) end
+            end
+            for i, p in ipairs(parts) do
+                statusLbl.Text = "Part "..i.."/"..#parts
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = p.CFrame + Vector3.new(0,2,0) end
+                task.wait(1)
+            end
+            -- Glove
+            local ruins = workspace:FindFirstChild("ruins")
+            local elude = ruins and ruins:FindFirstChild("Elude")
+            local glovePart = elude and elude:FindFirstChild("Glove")
+            if glovePart and glovePart:IsA("BasePart") then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = glovePart.CFrame + Vector3.new(0,2,0) end
+                statusLbl.Text = "✅ Done!"
+                statusLbl.TextColor3 = COLORS.green
+            end
+        end)
+    end)
 
-    eludeMazeStartFunc = startMaze
-
-    scanCollectables()
-    task.wait(0.5)
-    teleportToGlove()
+    makeButton(content, "🧤 Teleport to Glove", 118, COLORS.button, function()
+        local ruins = workspace:FindFirstChild("ruins")
+        local elude = ruins and ruins:FindFirstChild("Elude")
+        local gp = elude and elude:FindFirstChild("Glove")
+        if gp and gp:IsA("BasePart") then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.CFrame = gp.CFrame + Vector3.new(0,2,0) end
+            statusLbl.Text = "Teleported to Glove"
+            statusLbl.TextColor3 = COLORS.green
+        else
+            statusLbl.Text = "Glove not found"
+            statusLbl.TextColor3 = COLORS.red
+        end
+    end)
 end
 
--- Boxing Helper
+-- ==================== BOXING HELPER ====================
 local function loadBoxingHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.6, 0, 0.5, 0)
-    frame.Position = UDim2.new(0.2, 0, 0.25, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "⚡ Boxing Gloves Helper", {
+        gloveName = "Boxing",
+    })
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "⚡ Boxing Gloves Teleport + Click"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 14
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 1, -40)
-    status.BackgroundTransparency = 1
-    status.Text = "Ready"
-    status.TextColor3 = COLORS.muted
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-
-    local teleportBtn = Instance.new("TextButton")
-    teleportBtn.Size = UDim2.new(0, 200, 0, 50)
-    teleportBtn.Position = UDim2.new(0.5, -100, 0.5, -25)
-    teleportBtn.BackgroundColor3 = COLORS.button
-    teleportBtn.AutoButtonColor = false
-    teleportBtn.Text = "Go to Gloves & Click"
-    teleportBtn.TextColor3 = COLORS.text
-    teleportBtn.TextSize = 13
-    teleportBtn.Font = Enum.Font.GothamSemibold
-    teleportBtn.BorderSizePixel = 0
-    teleportBtn.Parent = frame
-    addCorner(teleportBtn, 8)
-    addStroke(teleportBtn, 0.3)
-
-    local function teleportAndClick()
+    makeButton(content, "Go to Gloves & Click", 30, COLORS.button, function()
         local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
         local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then status.Text = "❌ No HumanoidRootPart"; return end
-
+        if not root then statusLbl.Text = "❌ No HRP"; statusLbl.TextColor3 = COLORS.red; return end
         root.CFrame = CFrame.new(Vector3.new(15.914116, 56.489292, 7.941850))
         task.wait(0.1)
-
         local gloves = workspace:FindFirstChild("BoxingGloves")
-        if not gloves then status.Text = "❌ BoxingGloves not found"; return end
-        local clickDetector = gloves:FindFirstChild("ClickDetector")
-        if not clickDetector then status.Text = "❌ No ClickDetector"; return end
-
+        if not gloves then statusLbl.Text = "❌ BoxingGloves not found"; return end
         root.CFrame = CFrame.new(gloves.Position + Vector3.new(0, 3, 0))
         RunService.Heartbeat:Wait()
-
-        local screenPoint, onScreen = Camera:WorldToScreenPoint(gloves.Position)
-        if not onScreen then status.Text = "⚠️ Not on screen"; return end
-        local x, y = screenPoint.X, screenPoint.Y
-        VIM:SendMouseButtonEvent(x, y, 0, true, Enum.UserInputType.MouseButton1, 0)
+        local sp, on = Camera:WorldToScreenPoint(gloves.Position)
+        if not on then statusLbl.Text = "⚠ Not on screen"; return end
+        VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, Enum.UserInputType.MouseButton1, 0)
         task.wait(0.05)
-        VIM:SendMouseButtonEvent(x, y, 0, false, Enum.UserInputType.MouseButton1, 0)
-        status.Text = "✅ Teleported and clicked!"
-    end
-
-    teleportBtn.MouseButton1Click:Connect(teleportAndClick)
+        VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, Enum.UserInputType.MouseButton1, 0)
+        statusLbl.Text = "✅ Done"
+        statusLbl.TextColor3 = COLORS.green
+    end)
 end
 
--- Fan Helper
+-- ==================== FAN HELPER ====================
 local function loadFanHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 300)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -150)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "🗺️ Fan Glove Quest Helper", {
+        gloveName = "Fan",
+    })
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 5)
-    title.BackgroundTransparency = 1
-    title.Text = "🗺️ Fan Glove Quest Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 1, -40)
-    status.BackgroundColor3 = COLORS.panelAlt
-    status.Text = "Ready. Click a button to begin."
-    status.TextColor3 = COLORS.muted
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-    addCorner(status, 4)
-    addStroke(status, 0.4)
-
-    local function setStatus(text, color)
-        status.Text = text
-        status.TextColor3 = color or COLORS.text
-    end
-
-    local function fireRemote(remoteName, times)
-        local remoteFolder = ReplicatedStorage:FindFirstChild("RemoteEvents")
-        if remoteFolder then
-            local remote = remoteFolder:FindFirstChild(remoteName)
-            if remote then
-                for i = 1, (times or 1) do
-                    pcall(function() remote:FireServer() end)
-                    task.wait(0.5)
-                end
-                return true
+    local function setStatus(t, c) statusLbl.Text = t; statusLbl.TextColor3 = c or COLORS.text end
+    local function fireRemote(name, times)
+        local rf = ReplicatedStorage:FindFirstChild("RemoteEvents")
+        local r = rf and rf:FindFirstChild(name)
+        if r then
+            for _ = 1, (times or 1) do
+                pcall(function() r:FireServer() end)
+                task.wait(0.5)
             end
+            return true
         end
         return false
     end
-
-    local function getTargetCFrame(path, maxWait)
-        local current = workspace
-        for _, name in ipairs(path) do
-            local part = current:FindFirstChild(name)
-            if not part and maxWait then
-                setStatus("Waiting for "..name.." to spawn...", COLORS.blue)
-                part = current:WaitForChild(name, maxWait)
-            end
-            if not part then
-                return nil, "Missing: "..name
-            end
-            current = part
+    local function getPartCFrame(path, waitTime)
+        local cur = workspace
+        for _, n in ipairs(path) do
+            local p = cur:FindFirstChild(n)
+            if not p and waitTime then p = cur:WaitForChild(n, waitTime) end
+            if not p then return nil end
+            cur = p
         end
-
-        if current:IsA("BasePart") then return current.CFrame, nil
-        elseif current:IsA("Model") then
-            local primary = current.PrimaryPart
-            if primary then return primary.CFrame, nil end
-            for _, p in ipairs(current:GetDescendants()) do
-                if p:IsA("BasePart") then return p.CFrame, nil end
+        if cur:IsA("BasePart") then return cur.CFrame end
+        if cur:IsA("Model") then
+            local pr = cur.PrimaryPart
+            if pr then return pr.CFrame end
+            for _, d in ipairs(cur:GetDescendants()) do
+                if d:IsA("BasePart") then return d.CFrame end
             end
-            return nil, "No part in model"
-        else return nil, "Not a part or model" end
-    end
-
-    local function teleportTo(cframe)
-        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then
-            setStatus("❌ HumanoidRootPart missing!", COLORS.red)
-            return false
         end
-        hrp.CFrame = cframe + Vector3.new(0, 3, 0)
-        return true
     end
-
+    local function tpTo(cf)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and cf then hrp.CFrame = cf + Vector3.new(0,3,0); return true end
+        return false
+    end
     local function startQuest()
         setStatus("Talking to Pablo...", COLORS.blue)
         fireRemote("SuitUpClown", 2)
         task.wait(1)
-
-        setStatus("Accepting Key Quest...", COLORS.blue)
         fireRemote("KeyQuest", 1)
         task.wait(1)
-
-        setStatus("✅ Quest started. Key should be spawning.", COLORS.green)
-        task.wait(2)
+        setStatus("✅ Quest started.", COLORS.green)
     end
-
     local function tpAndFire(path, targetName, remoteName, fireTimes, waitTime)
-        setStatus("Searching for "..targetName.." ...", COLORS.blue)
-        local cframe, err = getTargetCFrame(path, waitTime)
-
-        if not cframe then
-            setStatus("❌ "..err, COLORS.red)
-            return false
-        end
-
-        local success = teleportTo(cframe)
-        if success then
-            setStatus("✅ Teleported to "..targetName..". Firing remote...", COLORS.green)
+        local cf = getPartCFrame(path, waitTime)
+        if not cf then setStatus("❌ Missing: "..targetName, COLORS.red); return end
+        if tpTo(cf) then
             task.wait(1)
-            if fireRemote(remoteName, fireTimes) then
-                setStatus("✅ Fired "..remoteName.."!", COLORS.green)
-                return true
-            else
-                setStatus("❌ Failed to fire "..remoteName, COLORS.red)
-            end
+            fireRemote(remoteName, fireTimes)
+            setStatus("✅ "..remoteName.." fired", COLORS.green)
         end
-        return false
     end
 
-    local function createButton(text, y, callback)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.9, 0, 0, 36)
-        btn.Position = UDim2.new(0.05, 0, 0, y)
-        btn.BackgroundColor3 = COLORS.sidebarButton
-        btn.AutoButtonColor = false
-        btn.Text = text
-        btn.TextColor3 = COLORS.text
-        btn.TextSize = 12
-        btn.Font = Enum.Font.GothamSemibold
-        btn.BorderSizePixel = 0
-        btn.Parent = frame
-        addCorner(btn, 6)
-        addStroke(btn, 0.4)
-        btn.MouseButton1Click:Connect(callback)
-        return btn
+    local yPos = 30
+    local function addStep(text, cb)
+        makeButton(content, text, yPos, COLORS.sidebarButton, cb)
+        yPos = yPos + 44
     end
 
-    createButton("1. Start Quest (Talk to Pablo)", 42, function()
-        task.spawn(function()
-            startQuest()
-            setStatus("Ready.", COLORS.muted)
-        end)
+    addStep("1. Start Quest (Talk to Pablo)", function()
+        task.spawn(function() startQuest() end)
     end)
-
-    createButton("2. TP to Key & Acquire", 84, function()
+    addStep("2. TP to Key & Acquire", function()
         task.spawn(function()
             tpAndFire({"QuestStuff", "Key"}, "Key", "KeyAcquired", 1, 10)
-            setStatus("Ready.", COLORS.muted)
         end)
     end)
-
-    createButton("3. TP to Cage & Claim Badge", 126, function()
+    addStep("3. TP to Cage & Claim Badge", function()
         task.spawn(function()
             tpAndFire({"Buildings", "oog's cage", "Door"}, "Cage", "KeyBadgeReward", 1, 5)
-            setStatus("Ready.", COLORS.muted)
         end)
     end)
-
-    createButton("4. Talk to Pablo Again", 168, function()
+    addStep("4. Talk to Pablo Again", function()
         task.spawn(function()
             tpAndFire({"NPCS", "Pablo Pinkypoo"}, "Pablo", "SuitUpClown", 1, 5)
-            setStatus("Ready.", COLORS.muted)
         end)
     end)
-
-    local btnAuto = createButton("⚡ AUTO COMPLETE QUEST ⚡", 210, function()
+    addStep("⚡ AUTO COMPLETE QUEST ⚡", function()
         task.spawn(function()
-            setStatus("Starting auto sequence...", COLORS.purple)
+            setStatus("Auto sequence...", COLORS.purple)
             startQuest()
             tpAndFire({"QuestStuff", "Key"}, "Key", "KeyAcquired", 1, 10)
             tpAndFire({"Buildings", "oog's cage", "Door"}, "Cage", "KeyBadgeReward", 1, 5)
             tpAndFire({"NPCS", "Pablo Pinkypoo"}, "Pablo", "SuitUpClown", 1, 5)
-            setStatus("✅ Auto sequence finished!", COLORS.green)
-            task.wait(3)
-            setStatus("Ready.", COLORS.muted)
+            setStatus("✅ Auto finished!", COLORS.green)
         end)
     end)
-    btnAuto.BackgroundColor3 = COLORS.purple
-
-    setStatus("Click a button to begin.", COLORS.muted)
 end
 
--- Untitled Helper
+-- ==================== UNTITLED HELPER (with place check) ====================
 local function loadUntitledHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 320, 0, 200)
-    frame.Position = UDim2.new(0.5, -160, 0.5, -100)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
+    local frame, gloveLbl, placeLbl, content = makeHelperPanel(parent, "📌 Untitled Tag Glove Helper", {
+        gloveName = "Untitled Tag",
+        requiredPlace = PLACE_IDS.UntitledTag,
+    })
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 5)
-    title.BackgroundTransparency = 1
-    title.Text = "📌 Untitled Tag Glove Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 1, -40)
-    status.BackgroundColor3 = COLORS.panelAlt
-    status.Text = "Ready"
-    status.TextColor3 = COLORS.muted
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-    addCorner(status, 4)
-    addStroke(status, 0.4)
+    makeButton(content, "🌐 TP to Untitled Tag Place", 30, COLORS.purple, function()
+        teleportToPlace(PLACE_IDS.UntitledTag, statusLbl, "⏳ Teleporting...")
+    end)
 
-    local function setStatus(text, color)
-        status.Text = text
-        status.TextColor3 = color or COLORS.text
-    end
-
-    local function teleportTo(cframe)
-        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then
-            setStatus("HumanoidRootPart missing!", COLORS.red)
-            return false
+    makeButton(content, "🟢 TP to buildz Block", 74, COLORS.blue, function()
+        if not inPlace(PLACE_IDS.UntitledTag) then
+            statusLbl.Text = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
+            statusLbl.TextColor3 = COLORS.warn
+            return
         end
-        hrp.CFrame = cframe + Vector3.new(0, 3, 0)
-        return true
-    end
-
-    local function findPartByPosition(folder, targetPos, tolerance)
-        tolerance = tolerance or 0.5
-        if not folder then return nil end
+        local folder = workspace:FindFirstChild("buildz")
+        if not folder then statusLbl.Text = "❌ buildz not found"; return end
+        local targetPos = Vector3.new(0, 187, 31)
         for _, obj in ipairs(folder:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                if (obj.Position - targetPos).Magnitude < tolerance then
-                    return obj
-                end
+            if obj:IsA("BasePart") and (obj.Position - targetPos).Magnitude < 0.5 then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = obj.CFrame + Vector3.new(0,2,0) end
+                statusLbl.Text = "✅ Done"; statusLbl.TextColor3 = COLORS.green
+                return
             end
         end
-        return nil
-    end
-
-    local function createButton(text, yPos, color, onClick)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.9, 0, 0, 40)
-        btn.Position = UDim2.new(0.05, 0, 0, yPos)
-        btn.BackgroundColor3 = color or COLORS.sidebarButton
-        btn.AutoButtonColor = false
-        btn.Text = text
-        btn.TextColor3 = COLORS.text
-        btn.TextSize = 13
-        btn.Font = Enum.Font.GothamSemibold
-        btn.BorderSizePixel = 0
-        btn.Parent = frame
-        addCorner(btn, 6)
-        addStroke(btn, 0.4)
-        btn.MouseButton1Click:Connect(onClick)
-        return btn
-    end
-
-    createButton("🌐 TP to Untitled Tag Place", 45, COLORS.purple, function()
-        setStatus("⏳ Teleporting to Untitled Tag place...", Color3.fromRGB(255, 200, 100))
-        TeleportService:Teleport(PLACE_IDS.UntitledTag, LocalPlayer)
+        statusLbl.Text = "❌ Block not found"
+        statusLbl.TextColor3 = COLORS.red
     end)
-
-    createButton("🟢 TP to buildz Block", 95, COLORS.blue, function()
-        setStatus("Searching for buildz part...", COLORS.blue)
-        local buildzFolder = workspace:FindFirstChild("buildz")
-        if not buildzFolder then
-            setStatus("❌ Missing: Workspace.buildz", COLORS.red)
-            return
-        end
-
-        local targetPos = Vector3.new(0, 187, 31)
-        local foundPart = findPartByPosition(buildzFolder, targetPos, 0.5)
-
-        if not foundPart then
-            setStatus("❌ No part found at (0, 187, 31)", COLORS.red)
-            return
-        end
-
-        if teleportTo(foundPart.CFrame) then
-            setStatus("✅ Teleported to buildz block", COLORS.green)
-        end
-    end)
-
-    setStatus("Click a button to begin", COLORS.muted)
 end
 
--- Counter Helper
-local function loadCounterHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.7, 0, 0.8, 0)
-    frame.Position = UDim2.new(0.15, 0, 0.1, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
+-- ==================== PLATE HELPER (with place check) ====================
+local function loadPlateHelper(parent)
+    local frame, gloveLbl, placeLbl, content = makeHelperPanel(parent, "📋 Plate Glove Helper", {
+        gloveName = "Plate",
+        requiredPlace = PLACE_IDS.PlatePlace,
+    })
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "🥊 Counter Glove Helper (WIP)"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
-    local noteLabel = Instance.new("TextLabel")
-    noteLabel.Size = UDim2.new(1, -20, 0, 20)
-    noteLabel.Position = UDim2.new(0, 10, 0, 40)
-    noteLabel.BackgroundTransparency = 1
-    noteLabel.Text = "Note: TP to glove does not recognize part (WIP)"
-    noteLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
-    noteLabel.TextSize = 12
-    noteLabel.Font = Enum.Font.Gotham
-    noteLabel.TextXAlignment = Enum.TextXAlignment.Left
-    noteLabel.Parent = frame
+    makeButton(content, "🌐 TP to Plate Place", 30, COLORS.purple, function()
+        teleportToPlace(PLACE_IDS.PlatePlace, statusLbl, "⏳ Teleporting to Plate place...")
+    end)
+
+    local surviveActive = false
+    local clearLoop = nil
+    local surviveThread = nil
+
+    local function survive()
+        if not inPlace(PLACE_IDS.PlatePlace) then
+            statusLbl.Text = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
+            statusLbl.TextColor3 = COLORS.warn
+            return
+        end
+        if surviveActive then
+            statusLbl.Text = "Already surviving"; return
+        end
+        local obstaclesFolder = workspace:FindFirstChild("Obstacles")
+        if not obstaclesFolder then
+            statusLbl.Text = "❌ Obstacles folder missing"; statusLbl.TextColor3 = COLORS.red; return
+        end
+        surviveActive = true
+        statusLbl.Text = "🧹 Clearing obstacles for 120s..."
+        statusLbl.TextColor3 = COLORS.green
+
+        clearLoop = RunService.Heartbeat:Connect(function()
+            if not surviveActive then clearLoop:Disconnect(); return end
+            for _, c in ipairs(obstaclesFolder:GetChildren()) do c:Destroy() end
+        end)
+
+        surviveThread = task.spawn(function()
+            local remaining = 120
+            while remaining > 0 and surviveActive do
+                statusLbl.Text = string.format("⏳ %ds remaining (clearing obstacles)", remaining)
+                task.wait(1)
+                remaining -= 1
+            end
+            surviveActive = false
+            if clearLoop then clearLoop:Disconnect(); clearLoop = nil end
+            statusLbl.Text = "🎉 Survival complete! You should have the Plate glove now."
+            statusLbl.TextColor3 = COLORS.green
+        end)
+    end
+
+    makeButton(content, "🧹 Survive (clear obstacles for 2 min)", 74, COLORS.button, survive)
+end
+
+-- ==================== RIFTSHOT HELPER ====================
+local function loadRiftshotHelper(parent)
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "🎯 Riftshot Glove Helper", {
+        gloveName = "Riftshot",
+    })
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
+
+    local isClearing = false
+    local clearConnection, childAddedConnection
+
+    local function stopClearing()
+        if clearConnection then clearConnection:Disconnect(); clearConnection = nil end
+        if childAddedConnection then childAddedConnection:Disconnect(); childAddedConnection = nil end
+        isClearing = false
+        statusLbl.Text = "Stopped"
+        statusLbl.TextColor3 = COLORS.muted
+    end
+
+    local function startClearing()
+        if isClearing then return end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = CFrame.new(-260, 16, 485) end
+        task.wait(0.5)
+        local tf = workspace:FindFirstChild("Sharpshooter Sam's Targets")
+        if not tf then
+            statusLbl.Text = "❌ Targets folder missing"
+            statusLbl.TextColor3 = COLORS.red
+            return
+        end
+        isClearing = true
+        statusLbl.Text = "🧹 Clearing..."
+        statusLbl.TextColor3 = COLORS.green
+
+        clearConnection = RunService.Heartbeat:Connect(function()
+            if not isClearing then clearConnection:Disconnect(); return end
+            for _, c in ipairs(tf:GetChildren()) do c:Destroy() end
+        end)
+        childAddedConnection = tf.ChildAdded:Connect(function(c)
+            if isClearing then c:Destroy() end
+        end)
+    end
+
+    local helperBtn = makeButton(content, "▶ Start Helper", 30, COLORS.button, function()
+        if isClearing then
+            stopClearing()
+            helperBtn.Text = "▶ Start Helper"
+        else
+            startClearing()
+            helperBtn.Text = "⏹ Stop Helper"
+        end
+    end)
+end
+
+-- ==================== PLUNGER HELPER ====================
+local function loadPlungerHelper(parent)
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "🪠 Plunger Glove Helper", {
+        gloveName = "Plunger",
+    })
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
+
+    makeButton(content, "TP to Obby", 30, COLORS.button, function()
+        local events = ReplicatedStorage:FindFirstChild("Events")
+        local remote = events and events:FindFirstChild("suction_obby_tp")
+        if remote then
+            remote:FireServer()
+            statusLbl.Text = "✅ Fired suction_obby_tp"
+            statusLbl.TextColor3 = COLORS.green
+        else
+            statusLbl.Text = "❌ Remote not found"
+            statusLbl.TextColor3 = COLORS.red
+        end
+    end)
+
+    local pinned = false
+    local pinConn = nil
+    local bringBtn
+    bringBtn = makeButton(content, "Bring Glove To Me", 74, Color3.fromRGB(60, 170, 90), function()
+        if pinned then
+            if pinConn then pinConn:Disconnect(); pinConn = nil end
+            pinned = false
+            bringBtn.Text = "Bring Glove To Me"
+            bringBtn.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
+            statusLbl.Text = "Released"; statusLbl.TextColor3 = COLORS.muted
+            return
+        end
+        local target = workspace:FindFirstChild("plunger glove")
+        target = target and target:FindFirstChild("plungerglove")
+        if not target then
+            statusLbl.Text = "❌ plungerglove not found"
+            statusLbl.TextColor3 = COLORS.red
+            return
+        end
+        local cam = workspace.CurrentCamera
+        pinConn = RunService.RenderStepped:Connect(function()
+            target.CFrame = cam.CFrame * CFrame.new(0, 0, -5)
+        end)
+        pinned = true
+        bringBtn.Text = "Release Glove"
+        bringBtn.BackgroundColor3 = COLORS.danger
+        statusLbl.Text = "🪠 Glove pinned"
+        statusLbl.TextColor3 = COLORS.green
+    end)
+end
+
+-- ==================== WIP PAGE (internal navigation) ====================
+-- WIP page will have its own inner sub-bar (Counter | OperaGX | Camera)
+-- and content pages for each
+local wipInnerBar = Instance.new("Frame")
+wipInnerBar.Size = UDim2.new(1, -12, 0, 34)
+wipInnerBar.Position = UDim2.new(0, 6, 0, 0)
+wipInnerBar.BackgroundColor3 = COLORS.panelAlt
+wipInnerBar.BorderSizePixel = 0
+wipInnerBar.Parent = pages["WIP"]
+addCorner(wipInnerBar, 7)
+addStroke(wipInnerBar, 0.5)
+
+local wipInnerButtons = {}
+local wipInnerNames = {"Counter", "OperaGX", "Camera"}
+
+for i, name in ipairs(wipInnerNames) do
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1/#wipInnerNames, -6, 1, -6)
+    b.Position = UDim2.new((i-1)/#wipInnerNames, 3, 0, 3)
+    b.BackgroundColor3 = (i == 1) and COLORS.sidebarActive or COLORS.sidebarButton
+    b.Text = name
+    b.TextColor3 = (i == 1) and COLORS.text or COLORS.muted
+    b.TextSize = 11
+    b.Font = Enum.Font.GothamSemibold
+    b.AutoButtonColor = false
+    b.BorderSizePixel = 0
+    b.Parent = wipInnerBar
+    addCorner(b, 6)
+    addStroke(b, 0.4)
+    wipInnerButtons[name] = b
+end
+
+local wipContent = Instance.new("Frame")
+wipContent.Size = UDim2.new(1, 0, 1, -42)
+wipContent.Position = UDim2.new(0, 0, 0, 42)
+wipContent.BackgroundTransparency = 1
+wipContent.Parent = pages["WIP"]
+
+local wipPages = {}
+for _, name in ipairs(wipInnerNames) do
+    local p = Instance.new("Frame")
+    p.Size = UDim2.new(1, 0, 1, 0)
+    p.BackgroundTransparency = 1
+    p.Visible = false
+    p.Parent = wipContent
+    wipPages[name] = p
+end
+wipPages["Counter"].Visible = true
+
+local function showWipInner(name)
+    for n, p in pairs(wipPages) do p.Visible = (n == name) end
+    for n, b in pairs(wipInnerButtons) do
+        b.BackgroundColor3 = (n == name) and COLORS.sidebarActive or COLORS.sidebarButton
+        b.TextColor3 = (n == name) and COLORS.text or COLORS.muted
+    end
+    currentWipSub = name
+    setActiveKeybinds("WIP")
+end
+
+for name, b in pairs(wipInnerButtons) do
+    b.MouseButton1Click:Connect(function() showWipInner(name) end)
+end
+
+-- ==================== WIP: COUNTER ====================
+local function buildCounterPage(parent)
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "🥊 Counter Glove Helper (WIP)", {
+        gloveName = "Counter",
+    })
+
+    local noteLbl = Instance.new("TextLabel")
+    noteLbl.Size = UDim2.new(1, 0, 0, 16)
+    noteLbl.Position = UDim2.new(0, 0, 0, 0)
+    noteLbl.BackgroundTransparency = 1
+    noteLbl.Text = "Note: TP to glove does not recognize part"
+    noteLbl.TextColor3 = COLORS.warn
+    noteLbl.TextSize = 11
+    noteLbl.Font = Enum.Font.Gotham
+    noteLbl.TextXAlignment = Enum.TextXAlignment.Left
+    noteLbl.Parent = content
 
     local keyHint = Instance.new("TextLabel")
-    keyHint.Size = UDim2.new(1, -20, 0, 20)
-    keyHint.Position = UDim2.new(0, 10, 0, 65)
+    keyHint.Size = UDim2.new(1, 0, 0, 16)
+    keyHint.Position = UDim2.new(0, 0, 0, 18)
     keyHint.BackgroundTransparency = 1
-    keyHint.Text = "[R] Lever | [H] Fly (3min) | [G] Glove | [F] Hide/Show"
+    keyHint.Text = "[R] Lever | [H] Fly | [G] Glove | [F] Hide"
     keyHint.TextColor3 = COLORS.muted
-    keyHint.TextSize = 12
+    keyHint.TextSize = 11
     keyHint.Font = Enum.Font.Gotham
-    keyHint.Parent = frame
+    keyHint.TextXAlignment = Enum.TextXAlignment.Left
+    keyHint.Parent = content
 
-    local timerLabel = Instance.new("TextLabel")
-    timerLabel.Size = UDim2.new(1, -20, 0, 30)
-    timerLabel.Position = UDim2.new(0, 10, 0, 95)
-    timerLabel.BackgroundColor3 = COLORS.panelAlt
-    timerLabel.Text = "⏱️ Timer: 00:00"
-    timerLabel.TextColor3 = Color3.fromRGB(255, 255, 150)
-    timerLabel.TextSize = 14
-    timerLabel.Font = Enum.Font.GothamBold
-    timerLabel.Parent = frame
-    addCorner(timerLabel, 4)
-    addStroke(timerLabel, 0.4)
+    local timerLbl = Instance.new("TextLabel")
+    timerLbl.Size = UDim2.new(1, 0, 0, 24)
+    timerLbl.Position = UDim2.new(0, 0, 0, 38)
+    timerLbl.BackgroundColor3 = COLORS.panelAlt
+    timerLbl.Text = "⏱️ Timer: 00:00"
+    timerLbl.TextColor3 = Color3.fromRGB(255, 255, 150)
+    timerLbl.TextSize = 13
+    timerLbl.Font = Enum.Font.GothamBold
+    timerLbl.Parent = content
+    addCorner(timerLbl, 4)
 
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 1, -40)
-    status.BackgroundColor3 = COLORS.panelAlt
-    status.Text = "Ready"
-    status.TextColor3 = COLORS.muted
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-    addCorner(status, 4)
-    addStroke(status, 0.4)
-
-    local function setStatus(text, color)
-        status.Text = text
-        status.TextColor3 = color or COLORS.text
-    end
-    local function updateTimerDisplay(mins, secs)
-        timerLabel.Text = string.format("⏱️ Timer: %02d:%02d", mins, secs)
-    end
-    local function teleportTo(cframe)
-        local char = LocalPlayer.Character
-        if not char then setStatus("Character not loaded!", Color3.fromRGB(255,80,80)); return false end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then setStatus("HumanoidRootPart missing!", Color3.fromRGB(255,80,80)); return false end
-        hrp.CFrame = cframe + Vector3.new(0,2,0)
-        return true
-    end
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 66)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
     local flyEnabled = false
     local timerThread = nil
     local gloveSpawned = false
     local originalPos = nil
 
+    local function setStatus(t, c) statusLbl.Text = t; statusLbl.TextColor3 = c or COLORS.text end
+    local function updateTimer(m, s) timerLbl.Text = string.format("⏱️ Timer: %02d:%02d", m, s) end
+    local function tpTo(cf)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return false end
+        hrp.CFrame = cf + Vector3.new(0, 2, 0)
+        return true
+    end
+
     local function setPhysicsFlight(hrp, enable)
         local humanoid = hrp.Parent:FindFirstChildOfClass("Humanoid")
         local floatAtt = hrp:FindFirstChild("FlightAttachment") or Instance.new("Attachment")
         floatAtt.Name = "FlightAttachment"
         floatAtt.Parent = hrp
-
-        local linearVelocity = hrp:FindFirstChild("FlightVelocity")
-
+        local lv = hrp:FindFirstChild("FlightVelocity")
         if enable then
             if humanoid then humanoid.PlatformStand = true end
-            if not linearVelocity then
-                linearVelocity = Instance.new("LinearVelocity")
-                linearVelocity.Name = "FlightVelocity"
-                linearVelocity.MaxForce = 100000
-                linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
-                linearVelocity.Attachment0 = floatAtt
-                linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
-                linearVelocity.Parent = hrp
+            if not lv then
+                lv = Instance.new("LinearVelocity")
+                lv.Name = "FlightVelocity"
+                lv.MaxForce = 100000
+                lv.VectorVelocity = Vector3.new(0,0,0)
+                lv.Attachment0 = floatAtt
+                lv.RelativeTo = Enum.ActuatorRelativeTo.World
+                lv.Parent = hrp
             end
         else
             if humanoid then humanoid.PlatformStand = false end
-            if linearVelocity then linearVelocity:Destroy() end
+            if lv then lv:Destroy() end
             if floatAtt then floatAtt:Destroy() end
         end
     end
 
     local function stopTimer()
         if timerThread then task.cancel(timerThread); timerThread = nil end
-        updateTimerDisplay(0,0)
+        updateTimer(0,0)
     end
 
     local function startTimer()
@@ -1664,28 +1418,27 @@ local function loadCounterHelper(parent)
         timerThread = task.spawn(function()
             local remaining = 180
             while remaining > 0 do
-                updateTimerDisplay(math.floor(remaining/60), remaining%60)
+                updateTimer(math.floor(remaining/60), remaining%60)
                 task.wait(1)
                 remaining -= 1
             end
             gloveSpawned = true
-            updateTimerDisplay(0,0)
-            setStatus("✅ Counter Glove spawned! Press G to teleport.", Color3.fromRGB(80,255,80))
+            updateTimer(0,0)
+            setStatus("✅ Counter Glove spawned! Press G.", COLORS.green)
             timerThread = nil
         end)
     end
 
     local function toggleFly(enable)
         local char = LocalPlayer.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
         if enable then
             flyEnabled = true
             originalPos = hrp.CFrame
             hrp.CFrame = hrp.CFrame + Vector3.new(0, 50, 0)
             setPhysicsFlight(hrp, true)
-            setStatus("🕊️ Fly ON (Hovering 50 studs up)", Color3.fromRGB(100,255,255))
+            setStatus("🕊️ Fly ON", Color3.fromRGB(100,255,255))
             startTimer()
         else
             flyEnabled = false
@@ -1695,502 +1448,90 @@ local function loadCounterHelper(parent)
                 hrp.CFrame = originalPos + Vector3.new(0, 2, 0)
                 originalPos = nil
             end
-            setStatus("🕊️ Fly OFF (Returned to ground)", Color3.fromRGB(200,200,200))
+            setStatus("🕊️ Fly OFF", COLORS.muted)
         end
     end
 
     local function findGlovePart()
         local maze = workspace:FindFirstChild("Maze")
         if not maze then return nil end
-        for _, obj in ipairs(maze:GetDescendants()) do
-            if obj:IsA("BasePart") and #obj:GetChildren() > 0 then
-                return obj
-            end
+        for _, o in ipairs(maze:GetDescendants()) do
+            if o:IsA("BasePart") and #o:GetChildren() > 0 then return o end
         end
         return nil
     end
 
-    local function teleportToGlove()
-        if not gloveSpawned then
-            setStatus("❌ Glove hasn't spawned yet. Wait for timer.", Color3.fromRGB(255,200,0))
-            return
-        end
-        local part = findGlovePart()
-        if not part then
-            setStatus("❌ No glove part found in Workspace.Maze!", Color3.fromRGB(255,80,80))
-            return
-        end
-        teleportTo(part.CFrame)
-        setStatus("✅ Teleported to Glove! Click it to collect.", Color3.fromRGB(80,255,80))
-    end
-
     local function actionLever()
-        setStatus("Searching for lever...", Color3.fromRGB(100,200,255))
         local lever = workspace:FindFirstChild("CounterLever")
-        if not lever then setStatus("❌ CounterLever not found", Color3.fromRGB(255,80,80)); return end
+        if not lever then setStatus("❌ CounterLever not found", COLORS.red); return end
         local main = lever:FindFirstChild("Main")
         if main and main:IsA("BasePart") then
-            if teleportTo(main.CFrame) then setStatus("✅ Teleported to Lever (Main)", Color3.fromRGB(80,255,80)) end
+            tpTo(main.CFrame)
+            setStatus("✅ Lever", COLORS.green)
         else
             for _, p in ipairs(lever:GetDescendants()) do
                 if p:IsA("BasePart") then
-                    if teleportTo(p.CFrame) then setStatus("✅ Teleported to Lever (Fallback)", Color3.fromRGB(80,255,80)) end
+                    tpTo(p.CFrame)
+                    setStatus("✅ Lever (fallback)", COLORS.green)
                     return
                 end
             end
-            setStatus("❌ No BasePart in CounterLever", Color3.fromRGB(255,80,80))
         end
     end
 
-    local function actionToggleFly() toggleFly(not flyEnabled) end
-    local function actionGlove() teleportToGlove() end
-    local function actionHide() frame.Visible = not frame.Visible end
-
-    local function createButton(text, yPos, action)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0.8, 0, 0, 40)
-        btn.Position = UDim2.new(0.1, 0, 0, yPos)
-        btn.BackgroundColor3 = COLORS.sidebarButton
-        btn.AutoButtonColor = false
-        btn.Text = text
-        btn.TextColor3 = COLORS.text
-        btn.TextSize = 13
-        btn.Font = Enum.Font.GothamSemibold
-        btn.BorderSizePixel = 0
-        btn.Parent = frame
-        addCorner(btn, 6)
-        addStroke(btn, 0.4)
-        btn.MouseButton1Click:Connect(action)
+    local function actionGlove()
+        if not gloveSpawned then
+            setStatus("❌ Glove hasn't spawned yet", COLORS.warn); return
+        end
+        local part = findGlovePart()
+        if not part then setStatus("❌ No glove part", COLORS.red); return end
+        tpTo(part.CFrame)
+        setStatus("✅ Teleported", COLORS.green)
     end
 
-    createButton("🔧 Teleport to Lever [R]", 140, actionLever)
-    createButton("🕊️ Fly (3min timer) [H]", 195, actionToggleFly)
-    createButton("🧤 TP to Glove [G]", 250, actionGlove)
+    local function actionToggleFly() toggleFly(not flyEnabled) end
+    local function actionHide() frame.Visible = not frame.Visible end
 
     counterLeverFunc = actionLever
     counterFlyFunc = actionToggleFly
     counterGloveFunc = actionGlove
     counterHideFunc = actionHide
 
-    updateTimerDisplay(0,0)
-    setStatus("Ready – press H to fly, G after timer", COLORS.muted)
+    makeButton(content, "🔧 Teleport to Lever [R]", 92, COLORS.sidebarButton, actionLever)
+    makeButton(content, "🕊️ Fly (3min timer) [H]", 136, COLORS.sidebarButton, actionToggleFly)
+    makeButton(content, "🧤 TP to Glove [G]", 180, COLORS.sidebarButton, actionGlove)
+
+    updateTimer(0,0)
 end
 
--- ==================== PLATE HELPER (updated) ====================
-local function loadPlateHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.9, 0, 0.9, 0)
-    frame.Position = UDim2.new(0.05, 0, 0.05, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
+-- ==================== WIP: OPERA GX ====================
+local function buildOperaGXPage(parent)
+    local frame, gloveLbl, placeLbl, content = makeHelperPanel(parent, "🎮 Opera GX Helper (WIP)", {
+        gloveName = "G-X",
+        requiredPlace = PLACE_IDS.OperaGX,
+    })
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "📋 Plate Glove Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
+    local wipBanner = Instance.new("TextLabel")
+    wipBanner.Size = UDim2.new(1, 0, 0, 18)
+    wipBanner.Position = UDim2.new(0, 0, 0, 0)
+    wipBanner.BackgroundTransparency = 1
+    wipBanner.Text = "⚠️ WIP — ClickDetector clicks may not work"
+    wipBanner.TextColor3 = COLORS.warn
+    wipBanner.TextSize = 11
+    wipBanner.Font = Enum.Font.GothamBold
+    wipBanner.TextXAlignment = Enum.TextXAlignment.Left
+    wipBanner.Parent = content
 
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -20, 0, 25)
-    statusLabel.Position = UDim2.new(0, 10, 0, 45)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Text = "Ready"
-    statusLabel.TextColor3 = COLORS.muted
-    statusLabel.TextSize = 12
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    statusLabel.Parent = frame
-
-    local timerLabel = Instance.new("TextLabel")
-    timerLabel.Size = UDim2.new(1, -20, 0, 25)
-    timerLabel.Position = UDim2.new(0, 10, 0, 75)
-    timerLabel.BackgroundTransparency = 1
-    timerLabel.Text = ""
-    timerLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    timerLabel.TextSize = 14
-    timerLabel.Font = Enum.Font.GothamBold
-    timerLabel.TextXAlignment = Enum.TextXAlignment.Left
-    timerLabel.Parent = frame
-
-    local function setStatus(text, color)
-        statusLabel.Text = text
-        statusLabel.TextColor3 = color or COLORS.muted
-    end
-    local function setTimer(text)
-        timerLabel.Text = text
-    end
-
-    -- Survive logic: clear obstacles for 2 minutes
-    local surviveActive = false
-    local clearLoop = nil
-    local surviveThread = nil
-
-    local function survive()
-        if surviveActive then
-            setStatus("⚠️ Already in survival mode.", Color3.fromRGB(255, 200, 0))
-            return
-        end
-
-        local obstaclesFolder = workspace:FindFirstChild("Obstacles")
-        if not obstaclesFolder then
-            setStatus("❌ No 'Obstacles' folder found! Can't clear obstacles.", Color3.fromRGB(255, 80, 80))
-            return
-        end
-
-        setStatus("🧹 Clearing all obstacles...", Color3.fromRGB(200, 200, 255))
-        surviveActive = true
-        local duration = 120
-
-        clearLoop = RunService.Heartbeat:Connect(function()
-            if not surviveActive then
-                clearLoop:Disconnect()
-                return
-            end
-            for _, child in ipairs(obstaclesFolder:GetChildren()) do
-                child:Destroy()
-            end
-        end)
-
-        setStatus("🛡️ Surviving for 120 seconds (obstacles cleared constantly)", Color3.fromRGB(255, 255, 100))
-        setTimer("⏳ 120s remaining")
-
-        surviveThread = task.spawn(function()
-            local remaining = duration
-            while remaining > 0 and surviveActive do
-                setTimer(string.format("⏳ %d seconds remaining", remaining))
-                task.wait(1)
-                remaining -= 1
-            end
-            surviveActive = false
-            if clearLoop then clearLoop:Disconnect(); clearLoop = nil end
-            setTimer("✅ Survival complete!")
-            setStatus("🎉 You should have the Plate glove and badge now!", Color3.fromRGB(80, 255, 80))
-            surviveThread = nil
-        end)
-    end
-
-    -- Buttons
-    local buttonY = 120
-    local btnWidth = 0.7
-    local btnHeight = 44
-    local gap = 12
-
-    local function createPlateButton(text, y, color, action)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(btnWidth, 0, 0, btnHeight)
-        btn.Position = UDim2.new((1 - btnWidth)/2, 0, 0, y)
-        btn.BackgroundColor3 = color or COLORS.sidebarButton
-        btn.AutoButtonColor = false
-        btn.Text = text
-        btn.TextColor3 = COLORS.text
-        btn.TextSize = 13
-        btn.Font = Enum.Font.GothamSemibold
-        btn.BorderSizePixel = 0
-        btn.Parent = frame
-        addCorner(btn, 6)
-        addStroke(btn, 0.4)
-        btn.MouseButton1Click:Connect(action)
-        return btn
-    end
-
-    -- NEW: Single TP to Plate Place (replaces old TP to Plate + Slap Sign)
-    createPlateButton("🌐 TP to Plate Place", buttonY, COLORS.purple, function()
-        setStatus("⏳ Teleporting to Plate place...", Color3.fromRGB(255, 200, 100))
-        TeleportService:Teleport(PLACE_IDS.PlatePlace, LocalPlayer)
-    end)
-
-    -- Keep the obstacle-clearing survive button
-    createPlateButton("🧹 Survive (clear obstacles)", buttonY + btnHeight + gap, COLORS.sidebarButton, survive)
-
-    setStatus("✅ Plate helper ready. Use: TP → Survive", COLORS.muted)
-end
-
--- Riftshot Helper
-local function loadRiftshotHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.6, 0, 0.6, 0)
-    frame.Position = UDim2.new(0.2, 0, 0.2, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "🎯 Riftshot Glove Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
-
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 1, -40)
-    status.BackgroundColor3 = COLORS.panelAlt
-    status.Text = "Ready"
-    status.TextColor3 = COLORS.muted
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-    addCorner(status, 4)
-    addStroke(status, 0.4)
-
-    local function setStatus(text, color)
-        status.Text = text
-        status.TextColor3 = color or COLORS.text
-    end
-
-    local function teleportTo(pos)
-        local char = LocalPlayer.Character
-        if not char then setStatus("❌ Character not loaded.", Color3.fromRGB(255,80,80)); return false end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then setStatus("❌ HumanoidRootPart missing.", Color3.fromRGB(255,80,80)); return false end
-        root.CFrame = CFrame.new(pos)
-        return true
-    end
-
-    local isClearing = false
-    local clearConnection = nil
-    local childAddedConnection = nil
-    local targetsFolder = nil
-
-    local function stopClearing()
-        if clearConnection then clearConnection:Disconnect(); clearConnection = nil end
-        if childAddedConnection then childAddedConnection:Disconnect(); childAddedConnection = nil end
-        isClearing = false
-        setStatus("⏹️ Stopped clearing.", COLORS.muted)
-    end
-
-    local function startClearing()
-        if isClearing then
-            setStatus("⚠️ Already clearing.", Color3.fromRGB(255,200,0))
-            return
-        end
-
-        setStatus("📍 Teleporting to (-260, 16, 485)...", Color3.fromRGB(200,200,255))
-        teleportTo(Vector3.new(-260, 16, 485))
-        task.wait(0.5)
-
-        targetsFolder = workspace:FindFirstChild("Sharpshooter Sam's Targets")
-        if not targetsFolder then
-            setStatus("❌ Folder 'Sharpshooter Sam's Targets' not found!", Color3.fromRGB(255,80,80))
-            return
-        end
-
-        setStatus("🧹 Started continuous clearing...", Color3.fromRGB(255,255,100))
-        isClearing = true
-
-        local function deleteAllChildren()
-            for _, child in ipairs(targetsFolder:GetChildren()) do
-                child:Destroy()
-            end
-        end
-
-        clearConnection = RunService.Heartbeat:Connect(function()
-            if not isClearing then
-                clearConnection:Disconnect()
-                return
-            end
-            deleteAllChildren()
-        end)
-
-        childAddedConnection = targetsFolder.ChildAdded:Connect(function(child)
-            if isClearing then
-                child:Destroy()
-            end
-        end)
-
-        setStatus("✅ Clearing active – all targets/bombs gone instantly.", Color3.fromRGB(80,255,80))
-    end
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.6, 0, 0.25, 0)
-    btn.Position = UDim2.new(0.2, 0, 0.55, 0)
-    btn.BackgroundColor3 = COLORS.button
-    btn.AutoButtonColor = false
-    btn.Text = "▶ Start Helper"
-    btn.TextColor3 = COLORS.text
-    btn.TextSize = 14
-    btn.Font = Enum.Font.GothamSemibold
-    btn.BorderSizePixel = 0
-    btn.Parent = frame
-    addCorner(btn, 6)
-    addStroke(btn, 0.3)
-
-    btn.MouseButton1Click:Connect(function()
-        if isClearing then
-            stopClearing()
-            btn.Text = "▶ Start Helper"
-        else
-            startClearing()
-            btn.Text = "⏹ Stop Helper"
-        end
-    end)
-
-    local info = Instance.new("TextLabel")
-    info.Size = UDim2.new(0.9, 0, 0.2, 0)
-    info.Position = UDim2.new(0.05, 0, 0.82, 0)
-    info.BackgroundTransparency = 1
-    info.Text = "Teleports you to the targets and deletes all targets/bombs continuously. Click Stop to end."
-    info.TextColor3 = COLORS.muted
-    info.TextSize = 11
-    info.Font = Enum.Font.Gotham
-    info.TextWrapped = true
-    info.Parent = frame
-
-    setStatus("Click 'Start Helper' to begin.", COLORS.muted)
-end
-
--- Plunger Helper
-local function loadPlungerHelper(parent)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.6, 0, 0.6, 0)
-    frame.Position = UDim2.new(0.2, 0, 0.2, 0)
-    frame.BackgroundColor3 = COLORS.panel
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    addCorner(frame, 8)
-    addStroke(frame, 0.35)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 30)
-    title.Position = UDim2.new(0, 10, 0, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "🪠 Plunger Glove Helper"
-    title.TextColor3 = COLORS.text
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = frame
-
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, -20, 0, 30)
-    status.Position = UDim2.new(0, 10, 1, -40)
-    status.BackgroundColor3 = COLORS.panelAlt
-    status.Text = "Ready"
-    status.TextColor3 = COLORS.muted
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = frame
-    addCorner(status, 4)
-    addStroke(status, 0.4)
-
-    local function setStatus(text, color)
-        status.Text = text
-        status.TextColor3 = color or COLORS.text
-    end
-
-    local tpButton = Instance.new("TextButton")
-    tpButton.Size = UDim2.new(0.8, 0, 0, 36)
-    tpButton.Position = UDim2.new(0.1, 0, 0, 55)
-    tpButton.BackgroundColor3 = COLORS.button
-    tpButton.AutoButtonColor = false
-    tpButton.Text = "TP to Obby"
-    tpButton.TextColor3 = COLORS.text
-    tpButton.Font = Enum.Font.GothamSemibold
-    tpButton.TextSize = 13
-    tpButton.BorderSizePixel = 0
-    tpButton.Parent = frame
-    addCorner(tpButton, 6)
-    addStroke(tpButton, 0.3)
-
-    local bringButton = Instance.new("TextButton")
-    bringButton.Size = UDim2.new(0.8, 0, 0, 36)
-    bringButton.Position = UDim2.new(0.1, 0, 0, 100)
-    bringButton.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
-    bringButton.AutoButtonColor = false
-    bringButton.Text = "Bring Glove To Me"
-    bringButton.TextColor3 = COLORS.text
-    bringButton.Font = Enum.Font.GothamSemibold
-    bringButton.TextSize = 13
-    bringButton.BorderSizePixel = 0
-    bringButton.Parent = frame
-    addCorner(bringButton, 6)
-    addStroke(bringButton, 0.3)
-
-    tpButton.MouseButton1Click:Connect(function()
-        local events = ReplicatedStorage:FindFirstChild("Events")
-        local remote = events and events:FindFirstChild("suction_obby_tp")
-
-        if remote then
-            remote:FireServer()
-            tpButton.Text = "Fired!"
-            setStatus("✅ Fired suction_obby_tp", Color3.fromRGB(80,255,80))
-            task.wait(1)
-            tpButton.Text = "TP to Obby"
-        else
-            tpButton.Text = "Remote not found"
-            setStatus("❌ Events.suction_obby_tp not found", Color3.fromRGB(255,80,80))
-            task.wait(2)
-            tpButton.Text = "TP to Obby"
-        end
-    end)
-
-    local pinned = false
-    local pinConn = nil
-
-    bringButton.MouseButton1Click:Connect(function()
-        if pinned then
-            if pinConn then pinConn:Disconnect(); pinConn = nil end
-            pinned = false
-            bringButton.Text = "Bring Glove To Me"
-            bringButton.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
-            setStatus("Released glove.", COLORS.muted)
-            return
-        end
-
-        local target = workspace:FindFirstChild("plunger glove")
-        target = target and target:FindFirstChild("plungerglove")
-
-        if not target then
-            bringButton.Text = "Glove not found"
-            setStatus("❌ 'plunger glove.plungerglove' not found", Color3.fromRGB(255,80,80))
-            task.wait(2)
-            bringButton.Text = "Bring Glove To Me"
-            return
-        end
-
-        local cam = workspace.CurrentCamera
-        pinConn = RunService.RenderStepped:Connect(function()
-            target.CFrame = cam.CFrame * CFrame.new(0, 0, -5)
-        end)
-
-        pinned = true
-        bringButton.Text = "Release Glove"
-        bringButton.BackgroundColor3 = COLORS.danger
-        setStatus("🪠 Glove pinned in front of camera.", Color3.fromRGB(80,255,80))
-    end)
-end
-
--- Opera GX Helper (WIP)
-local function loadOperaGXHelper(parent)
-    local C = {
-        bg = COLORS.panel,
-        surf = COLORS.panel,
-        surfAlt = COLORS.panelAlt,
-        sub = COLORS.panelAlt,
-        brd = COLORS.border,
-        text = COLORS.text,
-        dim = COLORS.muted,
-        acc = COLORS.accent,
-        ok = COLORS.green,
-        warn = COLORS.warn,
-        err = COLORS.red,
-        pur = COLORS.purple,
-        blu = COLORS.blue,
-    }
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 18)
+    statusLbl.Position = UDim2.new(0, 0, 0, 20)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 11
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
 
     local COORDS = {
         [1] = Vector3.new(142, 86, 926),
@@ -2198,163 +1539,37 @@ local function loadOperaGXHelper(parent)
         [3] = Vector3.new(850, 86, 381),
     }
 
-    local function mk(cls, props, p)
-        local o = Instance.new(cls)
-        for k, v in pairs(props) do o[k] = v end
-        o.Parent = p
-        return o
-    end
-    local function round(o, r)
-        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = o
-    end
-    local function outline(o, col, t)
-        local s = Instance.new("UIStroke")
-        s.Color = col or C.brd
-        s.Thickness = t or 1
-        s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        s.Parent = o
-    end
-    local function tw(o, t, p) TweenService:Create(o, TweenInfo.new(t), p):Play() end
-    local function hrp()
-        local c = LocalPlayer.Character
-        return c and c:FindFirstChild("HumanoidRootPart")
-    end
-
-    local main = mk("Frame", {
-        Size = UDim2.new(1, -20, 1, -20),
-        Position = UDim2.new(0, 10, 0, 10),
-        BackgroundColor3 = C.bg,
-        BorderSizePixel = 0,
-        Active = true,
-    }, parent)
-    round(main, 10); outline(main, C.brd)
-
-    local wip = mk("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 20),
-        Position = UDim2.new(0, 12, 0, 4),
-        BackgroundTransparency = 1,
-        Text = "⚠️ WIP — ClickDetector clicks may not fully work",
-        TextColor3 = C.warn,
-        TextSize = 11,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, main)
-    wip.Name = "WIPBanner"
-
-    local tb = mk("Frame", {
-        Size = UDim2.new(1, -24, 0, 44),
-        Position = UDim2.new(0, 12, 0, 26),
-        BackgroundColor3 = C.surf,
-        BorderSizePixel = 0,
-    }, main)
-    round(tb, 10)
-
-    mk("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 20),
-        Position = UDim2.new(0, 12, 0, 4),
-        BackgroundTransparency = 1,
-        Text = "Opera GX Helper",
-        TextColor3 = C.text,
-        TextSize = 14,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, tb)
-    mk("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 14),
-        Position = UDim2.new(0, 12, 0, 24),
-        BackgroundTransparency = 1,
-        Text = "Click a challenge to expand",
-        TextColor3 = C.dim,
-        TextSize = 10,
-        Font = Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, tb)
-
-    local sb = mk("Frame", {
-        Size = UDim2.new(1, -24, 0, 50),
-        Position = UDim2.new(0, 12, 0, 76),
-        BackgroundColor3 = C.surf,
-        BorderSizePixel = 0,
-    }, main)
-    round(sb, 10); outline(sb, C.brd)
-
-    local sbBar = mk("Frame", {
-        Size = UDim2.new(0, 3, 0, 30),
-        Position = UDim2.new(0, 8, 0.5, -15),
-        BackgroundColor3 = C.acc,
-        BorderSizePixel = 0,
-    }, sb)
-    round(sbBar, 2)
-
-    local sbTitle = mk("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 16),
-        Position = UDim2.new(0, 18, 0, 6),
-        BackgroundTransparency = 1,
-        Text = "READY",
-        TextColor3 = C.text,
-        TextSize = 11,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, sb)
-
-    local sbDetail = mk("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 22),
-        Position = UDim2.new(0, 18, 0, 22),
-        BackgroundTransparency = 1,
-        Text = "Expand a challenge below",
-        TextColor3 = C.dim,
-        TextSize = 10,
-        Font = Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextWrapped = true,
-    }, sb)
-
-    local function status(t, d, c)
-        sbTitle.Text = string.upper(t)
-        sbTitle.TextColor3 = c or C.text
-        sbDetail.Text = d or ""
-        tw(sbBar, 0.2, { BackgroundColor3 = c or C.acc })
-    end
-
-    local scroll = mk("ScrollingFrame", {
-        Size = UDim2.new(1, -24, 1, -140),
-        Position = UDim2.new(0, 12, 0, 132),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = C.brd,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    }, main)
-    mk("UIListLayout", {
-        Padding = UDim.new(0, 8),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, scroll)
-
     local function tpToPortal(n)
         local ws = workspace:FindFirstChild("Workspace")
         local lobby = ws and ws:FindFirstChild("Lobby")
-        local portal = lobby and lobby:FindFirstChild("Portal" .. n)
+        local portal = lobby and lobby:FindFirstChild("Portal"..n)
         if not portal then
-            status("Error", "Missing Workspace.Workspace.Lobby.Portal" .. n, C.err); return
+            statusLbl.Text = "❌ Missing Portal"..n
+            statusLbl.TextColor3 = COLORS.red
+            return
         end
         local pos = portal:IsA("BasePart") and portal.Position
             or (portal.PrimaryPart and portal.PrimaryPart.Position)
-        if not pos then status("Error", "Portal has no position", C.err); return end
-        local h = hrp()
-        if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
-        status("Success", "Teleported to Portal" .. n .. " — walk in!", C.ok)
+        if not pos then return end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
+        statusLbl.Text = "✅ TP'd to Portal"..n
+        statusLbl.TextColor3 = COLORS.green
     end
 
     local function tpToButton(n)
+        if not inPlace(PLACE_IDS.OperaGX) then
+            statusLbl.Text = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
+            statusLbl.TextColor3 = COLORS.warn
+            return
+        end
         local coords = COORDS[n]
-        if not coords then status("Error", "No coords for Challenge " .. n, C.err); return end
-
-        status("TP to Button", ("Moving to (%d, %d, %d)"):format(coords.X, coords.Y, coords.Z), C.blu)
-        local h = hrp()
-        if h then h.CFrame = CFrame.new(coords + Vector3.new(0, 3, 0)) end
+        if not coords then return end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.CFrame = CFrame.new(coords + Vector3.new(0, 3, 0)) end
         task.wait(0.7)
-
         local bestCD, bestDist = nil, 20
         for _, o in ipairs(workspace:GetDescendants()) do
             if o:IsA("ClickDetector") and o.Parent and o.Parent:IsA("BasePart") then
@@ -2362,23 +1577,21 @@ local function loadOperaGXHelper(parent)
                 if d < bestDist then bestDist = d; bestCD = o end
             end
         end
-        if not bestCD then status("Error", "No ClickDetector near coords", C.err); return end
-
+        if not bestCD then
+            statusLbl.Text = "❌ No ClickDetector found"
+            statusLbl.TextColor3 = COLORS.red
+            return
+        end
         local part = bestCD.Parent
-        status("Found", "Clicking " .. part:GetFullName(), C.ok)
-
-        h = hrp()
-        if h then h.CFrame = part.CFrame + Vector3.new(0, 3, 0) end
+        if hrp then hrp.CFrame = part.CFrame + Vector3.new(0, 3, 0) end
         task.wait(0.5)
-
-        status("Release Mouse", "Hands off! Clicking in 2s...", C.warn)
-        task.wait(2)
-
         local sp, on = Camera:WorldToViewportPoint(part.Position)
-        if not on then status("Warning", "Button off-screen. Aim camera.", C.warn); return end
+        if not on then
+            statusLbl.Text = "⚠ Button off screen"
+            statusLbl.TextColor3 = COLORS.warn
+            return
+        end
         local x, y = math.floor(sp.X), math.floor(sp.Y)
-
-        status("Clicking", ("Click at (%d, %d)"):format(x, y), C.acc)
         pcall(function() bestCD.MouseHoverEnter:Fire(LocalPlayer) end)
         task.wait(0.1)
         pcall(function() VIM:SendMouseMoveEvent(x, y, false, false) end)
@@ -2388,247 +1601,90 @@ local function loadOperaGXHelper(parent)
         VIM:SendMouseButtonEvent(x, y, 0, false, false, 1)
         task.wait(0.1)
         pcall(function() bestCD.MouseHoverLeave:Fire(LocalPlayer) end)
-
-        status("Success", "Challenge " .. n .. " clicked!", C.ok)
+        statusLbl.Text = "✅ Challenge "..n.." clicked"
+        statusLbl.TextColor3 = COLORS.green
     end
 
-    local function subBtn(text, color, onClick, p, order)
-        local b = mk("TextButton", {
-            Size = UDim2.new(1, -20, 0, 32),
-            BackgroundColor3 = C.sub,
-            Text = "",
-            AutoButtonColor = false,
-            BorderSizePixel = 0,
-            LayoutOrder = order,
-        }, p)
-        round(b, 8)
-        local s = Instance.new("UIStroke")
-        s.Color = C.brd; s.Thickness = 1; s.Transparency = 0.5
-        s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        s.Parent = b
-        mk("TextLabel", {
-            Size = UDim2.new(0, 20, 0, 20),
-            Position = UDim2.new(0, 8, 0.5, -10),
-            BackgroundTransparency = 1,
-            Text = "▸",
-            TextColor3 = color,
-            TextSize = 14,
-            Font = Enum.Font.GothamBold,
-        }, b)
-        mk("TextLabel", {
-            Size = UDim2.new(1, -40, 1, 0),
-            Position = UDim2.new(0, 30, 0, 0),
-            BackgroundTransparency = 1,
-            Text = text,
-            TextColor3 = C.text,
-            TextSize = 12,
-            Font = Enum.Font.Gotham,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        }, b)
-        b.MouseEnter:Connect(function()
-            tw(b, 0.15, { BackgroundColor3 = C.surfAlt })
-            tw(s, 0.15, { Color = color, Transparency = 0.2 })
+    -- Utility: TP to OperaGX place
+    makeButton(content, "🌐 TP to Opera GX Place", 46, COLORS.purple, function()
+        teleportToPlace(PLACE_IDS.OperaGX, statusLbl, "⏳ Teleporting to Opera GX...")
+    end)
+
+    -- Challenge 1/2/3 sections
+    local y = 90
+    for n = 1, 3 do
+        makeButton(content, "Challenge "..n.." — TP to Portal"..n, y, COLORS.blue, function()
+            tpToPortal(n)
         end)
-        b.MouseLeave:Connect(function()
-            tw(b, 0.15, { BackgroundColor3 = C.sub })
-            tw(s, 0.15, { Color = C.brd, Transparency = 0.5 })
+        y = y + 42
+        makeButton(content, "Challenge "..n.." — TP to Button & Click", y, COLORS.green, function()
+            tpToButton(n)
         end)
-        b.MouseButton1Click:Connect(onClick)
+        y = y + 46
     end
-
-    local function dropdown(n, color, order)
-        local sect = mk("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            LayoutOrder = order,
-        }, scroll)
-        mk("UIListLayout", {
-            Padding = UDim.new(0, 4),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-        }, sect)
-
-        local head = mk("TextButton", {
-            Size = UDim2.new(1, 0, 0, 42),
-            BackgroundColor3 = C.surf,
-            Text = "",
-            AutoButtonColor = false,
-            BorderSizePixel = 0,
-            LayoutOrder = 1,
-        }, sect)
-        round(head, 10)
-        local hs = Instance.new("UIStroke")
-        hs.Color = C.brd; hs.Thickness = 1; hs.Transparency = 0.4
-        hs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        hs.Parent = head
-
-        local bar = mk("Frame", {
-            Size = UDim2.new(0, 3, 0, 22),
-            Position = UDim2.new(0, 0, 0.5, -11),
-            BackgroundColor3 = color,
-            BorderSizePixel = 0,
-        }, head)
-        round(bar, 2)
-
-        mk("TextLabel", {
-            Size = UDim2.new(1, -60, 0, 18),
-            Position = UDim2.new(0, 16, 0, 5),
-            BackgroundTransparency = 1,
-            Text = "Challenge " .. n,
-            TextColor3 = C.text,
-            TextSize = 12,
-            Font = Enum.Font.GothamSemibold,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        }, head)
-        mk("TextLabel", {
-            Size = UDim2.new(1, -60, 0, 14),
-            Position = UDim2.new(0, 16, 0, 23),
-            BackgroundTransparency = 1,
-            Text = "Workspace.Workspace.Challenge" .. n,
-            TextColor3 = C.dim,
-            TextSize = 10,
-            Font = Enum.Font.Gotham,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        }, head)
-
-        local chev = mk("TextLabel", {
-            Size = UDim2.new(0, 20, 0, 20),
-            Position = UDim2.new(1, -28, 0.5, -10),
-            BackgroundTransparency = 1,
-            Text = "▼",
-            TextColor3 = C.dim,
-            TextSize = 12,
-            Font = Enum.Font.GothamBold,
-        }, head)
-
-        local sub = mk("Frame", {
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            Visible = false,
-            LayoutOrder = 2,
-        }, sect)
-        mk("UIListLayout", {
-            Padding = UDim.new(0, 4),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            HorizontalAlignment = Enum.HorizontalAlignment.Right,
-        }, sub)
-
-        subBtn("TP to Portal" .. n, C.blu, function() tpToPortal(n) end, sub, 1)
-        subBtn("TP to Button & Click", C.ok, function() tpToButton(n) end, sub, 2)
-
-        local open = false
-        head.MouseButton1Click:Connect(function()
-            open = not open
-            sub.Visible = open
-            chev.Text = open and "▲" or "▼"
-            tw(chev, 0.15, { TextColor3 = open and color or C.dim })
-        end)
-        head.MouseEnter:Connect(function()
-            tw(head, 0.15, { BackgroundColor3 = C.surfAlt })
-            tw(hs, 0.15, { Color = color, Transparency = 0.2 })
-        end)
-        head.MouseLeave:Connect(function()
-            tw(head, 0.15, { BackgroundColor3 = C.surf })
-            tw(hs, 0.15, { Color = C.brd, Transparency = 0.4 })
-        end)
-    end
-
-    mk("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 14),
-        BackgroundTransparency = 1,
-        Text = "CHALLENGES",
-        TextColor3 = C.dim,
-        TextSize = 10,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 1,
-    }, scroll)
-
-    dropdown(1, C.pur, 2)
-    dropdown(2, C.acc, 3)
-    dropdown(3, C.ok, 4)
-
-    mk("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 14),
-        BackgroundTransparency = 1,
-        Text = "UTILITY",
-        TextColor3 = C.dim,
-        TextSize = 10,
-        Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 5,
-    }, scroll)
-
-    local util = mk("TextButton", {
-        Size = UDim2.new(1, 0, 0, 42),
-        BackgroundColor3 = C.surf,
-        Text = "",
-        AutoButtonColor = false,
-        BorderSizePixel = 0,
-        LayoutOrder = 6,
-    }, scroll)
-    round(util, 10)
-    local us = Instance.new("UIStroke")
-    us.Color = C.brd; us.Thickness = 1; us.Transparency = 0.4
-    us.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    us.Parent = util
-    local ubar = mk("Frame", {
-        Size = UDim2.new(0, 3, 0, 22),
-        Position = UDim2.new(0, 0, 0.5, -11),
-        BackgroundColor3 = C.blu,
-        BorderSizePixel = 0,
-    }, util)
-    round(ubar, 2)
-    mk("TextLabel", {
-        Size = UDim2.new(1, -30, 0, 18),
-        Position = UDim2.new(0, 16, 0, 5),
-        BackgroundTransparency = 1,
-        Text = "Teleport to Opera GX Place",
-        TextColor3 = C.text,
-        TextSize = 12,
-        Font = Enum.Font.GothamSemibold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, util)
-    mk("TextLabel", {
-        Size = UDim2.new(1, -30, 0, 14),
-        Position = UDim2.new(0, 16, 0, 23),
-        BackgroundTransparency = 1,
-        Text = "Jump straight to the event",
-        TextColor3 = C.dim,
-        TextSize = 10,
-        Font = Enum.Font.Gotham,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, util)
-
-    util.MouseEnter:Connect(function()
-        tw(util, 0.15, { BackgroundColor3 = C.surfAlt })
-        tw(us, 0.15, { Color = C.blu, Transparency = 0.2 })
-    end)
-    util.MouseLeave:Connect(function()
-        tw(util, 0.15, { BackgroundColor3 = C.surf })
-        tw(us, 0.15, { Color = C.brd, Transparency = 0.4 })
-    end)
-    util.MouseButton1Click:Connect(function()
-        status("Teleporting", "Sending you to the Opera GX place...", C.warn)
-        task.wait(0.4)
-        TeleportService:Teleport(2380077519, LocalPlayer)
-    end)
-
-    status("Ready", "Expand a challenge below. WIP - clicks may not register.", COLORS.muted)
 end
 
--- Load all sub-pages
-loadDebugHelper(debugPage)
-loadEludeHelper(eludePage)
-loadBoxingHelper(boxingPage)
-loadFanHelper(fanPage)
-loadUntitledHelper(untitledPage)
-loadCounterHelper(counterPage)
-loadPlateHelper(platePage)
-loadRiftshotHelper(riftshotPage)
-loadPlungerHelper(plungerPage)
-loadOperaGXHelper(operaGXPage)
+-- ==================== WIP: CAMERA (placeholder) ====================
+local function buildCameraPage(parent)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.94, 0, 0.94, 0)
+    frame.Position = UDim2.new(0.03, 0, 0.03, 0)
+    frame.BackgroundColor3 = COLORS.panel
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+    addCorner(frame, 10)
+    addStroke(frame, 0.35)
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.Size = UDim2.new(1, -24, 0, 26)
+    titleLbl.Position = UDim2.new(0, 14, 0, 10)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Text = "📷 Camera Helper"
+    titleLbl.TextColor3 = COLORS.text
+    titleLbl.TextSize = 15
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Parent = frame
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, -24, 0, 18)
+    statusLbl.Position = UDim2.new(0, 14, 0, 40)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "⚠ Working on it"
+    statusLbl.TextColor3 = COLORS.warn
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.GothamBold
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = frame
+
+    local body = Instance.new("TextLabel")
+    body.Size = UDim2.new(1, -24, 0, 60)
+    body.Position = UDim2.new(0, 14, 0, 70)
+    body.BackgroundTransparency = 1
+    body.Text = "This helper is not built yet.\nCheck back later!"
+    body.TextColor3 = COLORS.muted
+    body.TextSize = 12
+    body.Font = Enum.Font.Gotham
+    body.TextXAlignment = Enum.TextXAlignment.Left
+    body.TextYAlignment = Enum.TextYAlignment.Top
+    body.TextWrapped = true
+    body.Parent = frame
+end
+
+-- Build the WIP inner pages
+buildCounterPage(wipPages["Counter"])
+buildOperaGXPage(wipPages["OperaGX"])
+buildCameraPage(wipPages["Camera"])
+
+-- ==================== LOAD MAIN GLOVE HELPERS ====================
+loadDebugHelper(pages["Debug"])
+loadEludeHelper(pages["Elude"])
+loadBoxingHelper(pages["Boxing"])
+loadFanHelper(pages["Fan"])
+loadUntitledHelper(pages["Untitled"])
+loadPlateHelper(pages["Plate"])
+loadRiftshotHelper(pages["Riftshot"])
+loadPlungerHelper(pages["Plunger"])
 
 -- ==================== GLOBAL KEYBINDS ====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -2645,7 +1701,7 @@ local function showMainPage(pageName)
     homePage.Visible = (pageName == "home")
     glovePage.Visible = (pageName == "glove")
     updateSidebarHighlight(pageName == "home" and homeTabBtn or gloveTabBtn)
-    setActiveKeybinds(nil)
+    clearKeybinds()
 end
 
 homeTabBtn.MouseButton1Click:Connect(function() showMainPage("home") end)
