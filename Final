@@ -3,8 +3,9 @@
     Tabs: Home | Glove
     Home: Brazil Teleport (place ID) + Main Game Teleport + Keypad Helper
     Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Counter | Plate | Riftshot | Plunger | OperaGX (WIP)
-    Elude: Maze + Glove Teleporter (Keypad moved to Home)
+    Elude: Maze (place TP) + Glove Teleporter
     Counter: New fly/timer/glove script with note "tp to glove doesnt recognize part"
+    Plate: TP to Plate Place + Survive (clear obstacles)
     OperaGX: WIP - teleport to Opera GX place + challenge portals/buttons (not fully working)
     Global keys: P = unlock cursor, Q = minimize
     Sub-tab keybinds only active when that tab is open.
@@ -58,9 +59,11 @@ local COLORS = {
 
 -- ==================== PLACE ID CONFIG ====================
 local PLACE_IDS = {
-    MainGame    = 6403373529,     -- Slap Battles (main game)
-    Brazil      = 7234087065,     -- Brazil place
-    UntitledTag = 115782629143468 -- Untitled Tag place
+    MainGame    = 6403373529,       -- Slap Battles (main game)
+    Brazil      = 7234087065,       -- Brazil place
+    UntitledTag = 115782629143468,  -- Untitled Tag place
+    EludeMaze   = 11828384869,      -- Elude Maze place
+    PlatePlace  = 106620300132058,  -- Plate place
 }
 
 local function teleportToPlace(placeId, statusLabel, pendingText)
@@ -560,10 +563,8 @@ subTabBar.BorderSizePixel = 0
 subTabBar.Parent = glovePage
 
 local subTabButtons = {}
--- 10 tabs now (OperaGX added)
 local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Counter", "Plate", "Riftshot", "Plunger", "OperaGX"}
 
--- Smaller width to fit 10 tabs: 52px wide, 56px spacing
 for i, name in ipairs(subTabNames) do
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 52, 1, -8)
@@ -656,7 +657,6 @@ plungerPage.BackgroundTransparency = 1
 plungerPage.Visible = false
 plungerPage.Parent = subPageContainer
 
--- NEW: Opera GX (WIP) page
 local operaGXPage = Instance.new("Frame")
 operaGXPage.Size = UDim2.new(1, 0, 1, 0)
 operaGXPage.BackgroundTransparency = 1
@@ -970,7 +970,7 @@ local function loadDebugHelper(parent)
     end)
 end
 
--- Elude Helper
+-- ==================== ELUDE HELPER (updated: TP to Maze added) ====================
 local function loadEludeHelper(parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0.9, 0, 0.9, 0)
@@ -1025,9 +1025,24 @@ local function loadEludeHelper(parent)
     mazeProgress.TextXAlignment = Enum.TextXAlignment.Left
     mazeProgress.Parent = frame
 
+    -- NEW: TP to Elude Maze place
+    local tpMazeBtn = Instance.new("TextButton")
+    tpMazeBtn.Size = UDim2.new(0, 200, 0, 36)
+    tpMazeBtn.Position = UDim2.new(0.5, -100, 0, 128)
+    tpMazeBtn.BackgroundColor3 = COLORS.purple
+    tpMazeBtn.AutoButtonColor = false
+    tpMazeBtn.Text = "🌐 TP to Elude Maze Place"
+    tpMazeBtn.TextColor3 = COLORS.text
+    tpMazeBtn.TextSize = 13
+    tpMazeBtn.Font = Enum.Font.GothamSemibold
+    tpMazeBtn.BorderSizePixel = 0
+    tpMazeBtn.Parent = frame
+    addCorner(tpMazeBtn, 6)
+    addStroke(tpMazeBtn, 0.3)
+
     local mazeBtn = Instance.new("TextButton")
     mazeBtn.Size = UDim2.new(0, 150, 0, 40)
-    mazeBtn.Position = UDim2.new(0.5, -75, 0, 140)
+    mazeBtn.Position = UDim2.new(0.5, -75, 0, 175)
     mazeBtn.BackgroundColor3 = COLORS.button
     mazeBtn.AutoButtonColor = false
     mazeBtn.Text = "Start Maze"
@@ -1041,7 +1056,7 @@ local function loadEludeHelper(parent)
 
     local gloveBtn = Instance.new("TextButton")
     gloveBtn.Size = UDim2.new(0, 150, 0, 40)
-    gloveBtn.Position = UDim2.new(0.5, -75, 0, 190)
+    gloveBtn.Position = UDim2.new(0.5, -75, 0, 225)
     gloveBtn.BackgroundColor3 = COLORS.button
     gloveBtn.AutoButtonColor = false
     gloveBtn.Text = "Teleport to Glove"
@@ -1136,6 +1151,11 @@ local function loadEludeHelper(parent)
         end
     end
 
+    tpMazeBtn.MouseButton1Click:Connect(function()
+        updateMazeStatus("⏳ Teleporting to Elude Maze place...", Color3.fromRGB(255, 200, 100))
+        TeleportService:Teleport(PLACE_IDS.EludeMaze, LocalPlayer)
+    end)
+
     mazeBtn.MouseButton1Click:Connect(startMaze)
     gloveBtn.MouseButton1Click:Connect(teleportToGlove)
 
@@ -1220,7 +1240,7 @@ local function loadBoxingHelper(parent)
     teleportBtn.MouseButton1Click:Connect(teleportAndClick)
 end
 
--- Fan Helper (improved version)
+-- Fan Helper
 local function loadFanHelper(parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 300, 0, 300)
@@ -1409,7 +1429,7 @@ local function loadFanHelper(parent)
     setStatus("Click a button to begin.", COLORS.muted)
 end
 
--- Untitled Helper (improved version)
+-- Untitled Helper
 local function loadUntitledHelper(parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0, 320, 0, 200)
@@ -1756,7 +1776,7 @@ local function loadCounterHelper(parent)
     setStatus("Ready – press H to fly, G after timer", COLORS.muted)
 end
 
--- Plate Helper
+-- ==================== PLATE HELPER (updated) ====================
 local function loadPlateHelper(parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(0.9, 0, 0.9, 0)
@@ -1808,79 +1828,7 @@ local function loadPlateHelper(parent)
         timerLabel.Text = text
     end
 
-    local function teleportTo(cframe)
-        local char = LocalPlayer.Character
-        if not char then return false end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return false end
-        root.CFrame = cframe + Vector3.new(0, 2, 0)
-        return true
-    end
-
-    local function spamLeftClick(duration)
-        local success = pcall(function()
-            local start = tick()
-            while tick() - start < duration do
-                VIM:SendMouseButtonEvent(0, 0, 0, true, Enum.UserInputType.MouseButton1, 0)
-                task.wait(0.05)
-                VIM:SendMouseButtonEvent(0, 0, 0, false, Enum.UserInputType.MouseButton1, 0)
-                task.wait(0.05)
-            end
-        end)
-        if not success then
-            warn("VirtualInputManager not available; trying fallback remotes.")
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            if remotes then
-                for i = 1, 10 do
-                    local use = remotes:FindFirstChild("Use")
-                    if use then use:FireServer() end
-                    local slap = remotes:FindFirstChild("Slap")
-                    if slap then slap:FireServer() end
-                    task.wait(0.1)
-                end
-            end
-        end
-    end
-
-    local function tpToPlate()
-        setStatus("📍 Searching for Plate...", Color3.fromRGB(200, 200, 255))
-        local plate = nil
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name == "Plate" then
-                plate = obj
-                break
-            end
-        end
-        if not plate then
-            setStatus("❌ Plate not found anywhere!", Color3.fromRGB(255, 80, 80))
-            return
-        end
-        if teleportTo(plate.CFrame) then
-            setStatus("✅ Arrived at Plate.", Color3.fromRGB(80, 255, 80))
-        end
-    end
-
-    local function slapSign()
-        setStatus("🔍 Looking for Sign...", Color3.fromRGB(200, 200, 255))
-        local sign = nil
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name == "Sign" then
-                sign = obj
-                break
-            end
-        end
-        if not sign then
-            setStatus("❌ Sign not found! Can't slap.", Color3.fromRGB(255, 80, 80))
-            return
-        end
-        setStatus("🚶 Moving near Sign...", Color3.fromRGB(200, 200, 100))
-        teleportTo(sign.CFrame)
-        task.wait(0.3)
-        setStatus("✋ Spamming left‑click to slap...", Color3.fromRGB(255, 200, 100))
-        spamLeftClick(1.5)
-        setStatus("✅ Slapped the Sign! Now use Survive.", Color3.fromRGB(80, 255, 80))
-    end
-
+    -- Survive logic: clear obstacles for 2 minutes
     local surviveActive = false
     local clearLoop = nil
     local surviveThread = nil
@@ -1929,16 +1877,17 @@ local function loadPlateHelper(parent)
         end)
     end
 
+    -- Buttons
     local buttonY = 120
     local btnWidth = 0.7
-    local btnHeight = 40
-    local gap = 10
+    local btnHeight = 44
+    local gap = 12
 
-    local function createPlateButton(text, y, action)
+    local function createPlateButton(text, y, color, action)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(btnWidth, 0, 0, btnHeight)
         btn.Position = UDim2.new((1 - btnWidth)/2, 0, 0, y)
-        btn.BackgroundColor3 = COLORS.sidebarButton
+        btn.BackgroundColor3 = color or COLORS.sidebarButton
         btn.AutoButtonColor = false
         btn.Text = text
         btn.TextColor3 = COLORS.text
@@ -1952,11 +1901,16 @@ local function loadPlateHelper(parent)
         return btn
     end
 
-    createPlateButton("📍 TP to Plate", buttonY, tpToPlate)
-    createPlateButton("✋ Slap Sign", buttonY + btnHeight + gap, slapSign)
-    createPlateButton("🧹 Survive (clear obstacles)", buttonY + 2*(btnHeight + gap), survive)
+    -- NEW: Single TP to Plate Place (replaces old TP to Plate + Slap Sign)
+    createPlateButton("🌐 TP to Plate Place", buttonY, COLORS.purple, function()
+        setStatus("⏳ Teleporting to Plate place...", Color3.fromRGB(255, 200, 100))
+        TeleportService:Teleport(PLACE_IDS.PlatePlace, LocalPlayer)
+    end)
 
-    setStatus("✅ Plate helper ready. Use: TP → Slap → Survive", COLORS.muted)
+    -- Keep the obstacle-clearing survive button
+    createPlateButton("🧹 Survive (clear obstacles)", buttonY + btnHeight + gap, COLORS.sidebarButton, survive)
+
+    setStatus("✅ Plate helper ready. Use: TP → Survive", COLORS.muted)
 end
 
 -- Riftshot Helper
@@ -2220,12 +2174,8 @@ local function loadPlungerHelper(parent)
     end)
 end
 
--- ==================== OPERA GX HELPER (WIP) ====================
--- NOTE: This is a WIP. ClickDetector interaction with VIM is unreliable in
--- some environments, so the "TP to Button & Click" actions may not always
--- register the click. Portal teleports and the Opera GX place teleport work.
+-- Opera GX Helper (WIP)
 local function loadOperaGXHelper(parent)
-    -- Local theme matching the rest of the hub
     local C = {
         bg = COLORS.panel,
         surf = COLORS.panel,
@@ -2242,17 +2192,16 @@ local function loadOperaGXHelper(parent)
         blu = COLORS.blue,
     }
 
-    -- Coordinates for challenge buttons
     local COORDS = {
         [1] = Vector3.new(142, 86, 926),
         [2] = Vector3.new(-387, 86, 386),
         [3] = Vector3.new(850, 86, 381),
     }
 
-    local function mk(cls, props, parent)
+    local function mk(cls, props, p)
         local o = Instance.new(cls)
         for k, v in pairs(props) do o[k] = v end
-        o.Parent = parent
+        o.Parent = p
         return o
     end
     local function round(o, r)
@@ -2271,7 +2220,6 @@ local function loadOperaGXHelper(parent)
         return c and c:FindFirstChild("HumanoidRootPart")
     end
 
-    -- Main container frame
     local main = mk("Frame", {
         Size = UDim2.new(1, -20, 1, -20),
         Position = UDim2.new(0, 10, 0, 10),
@@ -2281,7 +2229,6 @@ local function loadOperaGXHelper(parent)
     }, parent)
     round(main, 10); outline(main, C.brd)
 
-    -- WIP banner
     local wip = mk("TextLabel", {
         Size = UDim2.new(1, -24, 0, 20),
         Position = UDim2.new(0, 12, 0, 4),
@@ -2292,8 +2239,8 @@ local function loadOperaGXHelper(parent)
         Font = Enum.Font.GothamBold,
         TextXAlignment = Enum.TextXAlignment.Left,
     }, main)
+    wip.Name = "WIPBanner"
 
-    -- Title bar
     local tb = mk("Frame", {
         Size = UDim2.new(1, -24, 0, 44),
         Position = UDim2.new(0, 12, 0, 26),
@@ -2323,7 +2270,6 @@ local function loadOperaGXHelper(parent)
         TextXAlignment = Enum.TextXAlignment.Left,
     }, tb)
 
-    -- Status panel
     local sb = mk("Frame", {
         Size = UDim2.new(1, -24, 0, 50),
         Position = UDim2.new(0, 12, 0, 76),
@@ -2370,7 +2316,6 @@ local function loadOperaGXHelper(parent)
         tw(sbBar, 0.2, { BackgroundColor3 = c or C.acc })
     end
 
-    -- Scroll container
     local scroll = mk("ScrollingFrame", {
         Size = UDim2.new(1, -24, 1, -140),
         Position = UDim2.new(0, 12, 0, 132),
@@ -2386,7 +2331,6 @@ local function loadOperaGXHelper(parent)
         SortOrder = Enum.SortOrder.LayoutOrder,
     }, scroll)
 
-    -- Core logic
     local function tpToPortal(n)
         local ws = workspace:FindFirstChild("Workspace")
         local lobby = ws and ws:FindFirstChild("Lobby")
@@ -2411,7 +2355,6 @@ local function loadOperaGXHelper(parent)
         if h then h.CFrame = CFrame.new(coords + Vector3.new(0, 3, 0)) end
         task.wait(0.7)
 
-        -- Find nearest ClickDetector within 20 studs
         local bestCD, bestDist = nil, 20
         for _, o in ipairs(workspace:GetDescendants()) do
             if o:IsA("ClickDetector") and o.Parent and o.Parent:IsA("BasePart") then
@@ -2449,8 +2392,7 @@ local function loadOperaGXHelper(parent)
         status("Success", "Challenge " .. n .. " clicked!", C.ok)
     end
 
-    -- Dropdown builder
-    local function subBtn(text, color, onClick, parent, order)
+    local function subBtn(text, color, onClick, p, order)
         local b = mk("TextButton", {
             Size = UDim2.new(1, -20, 0, 32),
             BackgroundColor3 = C.sub,
@@ -2458,7 +2400,7 @@ local function loadOperaGXHelper(parent)
             AutoButtonColor = false,
             BorderSizePixel = 0,
             LayoutOrder = order,
-        }, parent)
+        }, p)
         round(b, 8)
         local s = Instance.new("UIStroke")
         s.Color = C.brd; s.Thickness = 1; s.Transparency = 0.5
@@ -2592,7 +2534,6 @@ local function loadOperaGXHelper(parent)
         end)
     end
 
-    -- Build list
     mk("TextLabel", {
         Size = UDim2.new(1, 0, 0, 14),
         BackgroundTransparency = 1,
