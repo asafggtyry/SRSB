@@ -1263,22 +1263,89 @@ local function loadSuctionHelper(parent)
     end)
 end
 
--- ==================== BIND HELPER (placeholder) ====================
+-- ==================== BIND HELPER (Wipe + Orb + TP) ====================
 local function loadBindHelper(parent)
     local frame, _, _, content = makeHelperPanel(parent, "🔗 Bind Helper", {})
 
-    local noteLbl = Instance.new("TextLabel")
-    noteLbl.Size = UDim2.new(1, 0, 0, 80)
-    noteLbl.Position = UDim2.new(0, 0, 0, 0)
-    noteLbl.BackgroundTransparency = 1
-    noteLbl.Text = "⚠ Bind script was not attached.\nPaste the Bind script and this tab will be wired up.\nPlaceholder for now."
-    noteLbl.TextColor3 = COLORS.warn
-    noteLbl.TextSize = 12
-    noteLbl.Font = Enum.Font.Gotham
-    noteLbl.TextWrapped = true
-    noteLbl.TextXAlignment = Enum.TextXAlignment.Left
-    noteLbl.TextYAlignment = Enum.TextYAlignment.Top
-    noteLbl.Parent = content
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
+
+    local function setStatus(t, c)
+        statusLbl.Text = t
+        statusLbl.TextColor3 = c or COLORS.muted
+    end
+
+    local function bringOrb()
+        local orb = workspace:FindFirstChild("Orb")
+        if not orb then return false, "Orb not found" end
+        local char = LocalPlayer.Character
+        if not char then return false, "Character not loaded" end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return false, "HumanoidRootPart missing" end
+
+        if orb:IsA("BasePart") then
+            orb.CFrame = hrp.CFrame + (hrp.CFrame.LookVector * 3) + Vector3.new(0, 1, 0)
+            return true, "Orb moved"
+        elseif orb:IsA("Model") then
+            local primary = orb.PrimaryPart
+            if not primary then
+                for _, d in ipairs(orb:GetDescendants()) do
+                    if d:IsA("BasePart") then primary = d; break end
+                end
+            end
+            if not primary then return false, "Orb model has no BasePart" end
+            local targetPos = hrp.Position + (hrp.CFrame.LookVector * 3) + Vector3.new(0, 1, 0)
+            orb:PivotTo(CFrame.new(targetPos))
+            return true, "Orb moved"
+        else
+            return false, "Orb is not a part or model"
+        end
+    end
+
+    local function wipeAll()
+        setStatus("🧹 Wiping...", COLORS.blue)
+        local rsCount = 0
+        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
+            pcall(function() child:Destroy() end)
+            rsCount += 1
+        end
+        local shadowCount = 0
+        local shadow = workspace:FindFirstChild("Shadow")
+        if shadow then
+            for _, child in ipairs(shadow:GetChildren()) do
+                pcall(function() child:Destroy() end)
+                shadowCount += 1
+            end
+        end
+        setStatus("🧲 Bringing Orb...", COLORS.blue)
+        local ok, msg = bringOrb()
+        if ok then
+            setStatus(("✅ Wiped %d RS + %d Shadow. Orb brought."):format(rsCount, shadowCount), COLORS.green)
+        else
+            setStatus(("✅ Wiped %d RS + %d Shadow. ⚠ Orb: %s"):format(rsCount, shadowCount, msg), COLORS.warn)
+        end
+    end
+
+    local function doTeleport()
+        setStatus("⏳ Teleporting...", COLORS.warn)
+        local ok, err = pcall(function()
+            TeleportService:Teleport(74169485398268, LocalPlayer)
+        end)
+        if not ok then
+            setStatus("❌ Teleport failed: " .. tostring(err), COLORS.red)
+        end
+    end
+
+    makeButton(content, "▶ START — Wipe + Bring Orb", 30, COLORS.button, wipeAll)
+    makeButton(content, "🌐 Teleport to Place", 74, COLORS.purple, doTeleport)
 end
 
 -- ==================== COLLECTER LAUNCHER ====================
