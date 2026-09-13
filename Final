@@ -181,7 +181,7 @@ local function makeHelperPanel(parent, title, opts)
     return frame, gloveStatusLbl, placeWarnLbl, content, contentTop
 end
 
--- ==================== CURSOR UNLOCKER (GLOBAL, Alt toggle) ====================
+-- ==================== CURSOR UNLOCKER (Alt toggle) ====================
 local cursorUnlocked = false
 local cursorUnlockLoop = nil
 
@@ -303,7 +303,7 @@ cursorBtn.MouseButton1Click:Connect(function()
     refreshCursorBtn()
 end)
 
--- Nav bar (Home | Gloves | WIP)
+-- Nav bar
 local navBar = Instance.new("Frame")
 navBar.Size = UDim2.new(1, 0, 0, 40)
 navBar.Position = UDim2.new(0, 0, 0, 44)
@@ -351,7 +351,6 @@ bodyContainer.BorderSizePixel = 0
 bodyContainer.ClipsDescendants = true
 bodyContainer.Parent = mainFrame
 
--- Minimize / drag
 local minimized = false
 local originalSize = mainFrame.Size
 local function toggleMinimize()
@@ -594,7 +593,6 @@ Players.PlayerRemoving:Connect(refreshKeypad)
 refreshKeypad()
 
 -- ==================== GLOVES PAGE LAYOUT ====================
--- Left: glove content area;  Right: scrollable glove list
 local glovesContent = Instance.new("Frame")
 glovesContent.Size = UDim2.new(1, -186, 1, 0)
 glovesContent.Position = UDim2.new(0, 0, 0, 0)
@@ -698,7 +696,8 @@ end
 
 -- ==================== GLOVE PAGES ====================
 local glovePages = {}
-local gloveOrder = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Plate", "Riftshot", "Suction", "Bind"}
+-- "Collecter" appended
+local gloveOrder = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Plate", "Riftshot", "Suction", "Bind", "Collecter"}
 for i, name in ipairs(gloveOrder) do
     local p = Instance.new("Frame")
     p.Size = UDim2.new(1, 0, 1, 0)
@@ -796,7 +795,6 @@ local function loadDebugHelper(parent)
             local dr = workspace:FindFirstChild("Debug Room")
             if not dr then continue end
 
-            -- D1
             local d1 = "?"
             local dt = dr:FindFirstChild("DuckTable")
             dt = dt and dt:FindFirstChild("DuckTable")
@@ -808,7 +806,6 @@ local function loadDebugHelper(parent)
                 d1 = tostring(n)
             end
 
-            -- D2 from AdminGloves.GlovesCode.SurfaceGui.AdminNumber attr "ContentText"
             local d2 = "?"
             local ag = dr:FindFirstChild("AdminGloves")
             local gc = ag and ag:FindFirstChild("GlovesCode")
@@ -817,7 +814,6 @@ local function loadDebugHelper(parent)
             if an then d2 = readNumber(an, "ContentText")
             elseif sg2 then d2 = readNumber(sg2, "ContentText") end
 
-            -- D3 from Maze.MazePrize.SurfaceGui.MazeNumber attr "Text"
             local d3 = "?"
             local maze = dr:FindFirstChild("Maze")
             local mp = maze and maze:FindFirstChild("MazePrize")
@@ -1163,7 +1159,7 @@ local function loadPlateHelper(parent)
     makeButton(content, "🧹 Survive (clear obstacles for 2 min)", 74, COLORS.button, survive)
 end
 
--- ==================== RIFTSHOT HELPER (NEW LOGIC) ====================
+-- ==================== RIFTSHOT HELPER ====================
 local function loadRiftshotHelper(parent)
     local frame, gloveLbl, _, content = makeHelperPanel(parent, "🎯 Riftshot Glove Helper", {
         gloveName = "Riftshot",
@@ -1206,7 +1202,7 @@ local function loadRiftshotHelper(parent)
     end)
 end
 
--- ==================== SUCTION HELPER (was Plunger) ====================
+-- ==================== SUCTION HELPER ====================
 local function loadSuctionHelper(parent)
     local frame, gloveLbl, _, content = makeHelperPanel(parent, "🪠 Suction Glove Helper", {
         gloveName = "Plunger",
@@ -1283,6 +1279,866 @@ local function loadBindHelper(parent)
     noteLbl.TextXAlignment = Enum.TextXAlignment.Left
     noteLbl.TextYAlignment = Enum.TextYAlignment.Top
     noteLbl.Parent = content
+end
+
+-- ==================== COLLECTER LAUNCHER ====================
+-- Wrapped Find The Gloves Collector — launched from the Collecter tab.
+local function launchGloveCollector()
+    if PlayerGui:FindFirstChild("GloveCollector") then
+        PlayerGui.GloveCollector:Destroy()
+    end
+
+    local TS = TeleportService
+    local RS = ReplicatedStorage
+    local LP = LocalPlayer
+    local PG = PlayerGui
+    local UIS = UserInputService
+    local ws = workspace
+
+    local PLACE_ID = 79885102123162
+    local isInMinigame = (game.PlaceId == PLACE_ID)
+
+    local SPECIAL_CFRAMES = {
+        Suction = CFrame.new(
+            -1523.81201, 973.338928, 574.394348,
+            -0.00483739376,  0.632705808, -0.774377167,
+             2.48253345e-05, -0.774386168, -0.632713318,
+            -0.999988377,   -0.0030798614, 0.00373023748
+        ),
+        Nightmare = CFrame.new(
+            111.787964, 744.402039, 1676.10669,
+            0.524091125,  0,          -0.851662278,
+            0,           -1.00000048,  -0,
+            -0.851662278, 0,          -0.524091601
+        ),
+    }
+
+    local USE_CF_TP = {
+        Hexa=true, Nightmare=true, Null=true, Scythe=true, Jerry=true,
+        Plate=true, Shopkeeper=true, Pineslapple=true, Reaper=true,
+        Barrel=true, Slender=true, Wrench=true, Suction=true,
+    }
+
+    local ALL_GLOVES = {}
+    local seen = {}
+    local function addGlove(name)
+        if seen[name] then return end
+        seen[name] = true
+        table.insert(ALL_GLOVES, name)
+    end
+
+    local gloveModels = RS:FindFirstChild("Assets")
+    gloveModels = gloveModels and gloveModels:FindFirstChild("GloveModels")
+    if gloveModels then
+        for _, c in ipairs(gloveModels:GetChildren()) do
+            addGlove(c.Name)
+        end
+    end
+
+    local root = nil
+    if isInMinigame then
+        local mapRoot = ws:FindFirstChild("Map")
+        root = mapRoot and mapRoot:FindFirstChild("GloveLocation")
+        if not root then
+            for _ = 1, 20 do
+                mapRoot = ws:FindFirstChild("Map")
+                root = mapRoot and mapRoot:FindFirstChild("GloveLocation")
+                if root then break end
+                task.wait(0.5)
+            end
+        end
+        if root then
+            for _, mapFolder in ipairs(root:GetChildren()) do
+                if mapFolder:IsA("Model") or mapFolder:IsA("Folder") then
+                    for _, entry in ipairs(mapFolder:GetChildren()) do
+                        addGlove(entry.Name)
+                    end
+                end
+            end
+        end
+    end
+
+    for name in pairs(SPECIAL_CFRAMES) do addGlove(name) end
+
+    if #ALL_GLOVES == 0 then
+        local fallback = {
+            "64","Moyai","Cloud","Obby","Prop","Slender","Virus","Plague","Lamp",
+            "OVERKILL","Diamond","Pineslapple","Fan","Mortis","Wrench","Plate",
+            "Hexo","Barrel","Brick","Golden","Key","Shopkeeper","Scythe","Swapper",
+            "Reaper","Phantom","Null","Hammer","Sun","Psycho","Suction","Default",
+            "Sbeve","Glitch","Nightmare","Snow","Jerry","Hive","Tableflip","Rocky",
+            "Potato","Debug","mortis","potato","Alchemist",
+        }
+        for _, n in ipairs(fallback) do addGlove(n) end
+    end
+
+    table.sort(ALL_GLOVES, function(a,b) return a:lower() < b:lower() end)
+
+    local QUEST_GLOVES = {
+        Moyai=true, Cloud=true, Obby=true, Pineslapple=true, Brick=true,
+        Key=true, Shopkeeper=true, Scythe=true, Null=true, Psycho=true,
+        Default=true, Sbeve=true, Glitch=true, Nightmare=true, Jerry=true,
+        Rocky=true, Suction=true,
+    }
+
+    local pinned = {
+        Nightmare = true,
+        Suction = true,
+    }
+
+    local C = {
+        bg=Color3.fromRGB(22,22,26), surf=Color3.fromRGB(32,32,38),
+        surfAlt=Color3.fromRGB(42,42,50), panel=Color3.fromRGB(36,36,41),
+        brd=Color3.fromRGB(58,58,68), text=Color3.fromRGB(240,240,245),
+        dim=Color3.fromRGB(150,150,165), ok=Color3.fromRGB(80,200,120),
+        warn=Color3.fromRGB(255,180,60), err=Color3.fromRGB(230,70,70),
+        blu=Color3.fromRGB(70,150,240), pur=Color3.fromRGB(150,90,220),
+        gold=Color3.fromRGB(255,210,80),
+    }
+
+    local function mk(cls, p, parent)
+        local o = Instance.new(cls)
+        for k,v in pairs(p) do o[k]=v end
+        o.Parent = parent
+        return o
+    end
+    local function round(o,r)
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = o
+    end
+    local function stroke(o, col)
+        local s = Instance.new("UIStroke"); s.Color = col or C.brd; s.Thickness = 1
+        s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = o; return s
+    end
+
+    local function tpToCFrame(cf)
+        local char = LP.Character
+        if not char then return false end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return false end
+        char:PivotTo(cf)
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        return true
+    end
+
+    local function getHRP()
+        local ch = LP.Character
+        if not ch then return nil end
+        return ch:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function walkIntoPart(part)
+        if not part or not part.Parent then return end
+        local hrp = getHRP()
+        if not hrp then return end
+        pcall(function()
+            if part.CanTouch == false then part.CanTouch = true end
+        end)
+
+        local target = part.Position
+        local halfHeight = part.Size.Y * 0.3
+        local startPos = target + Vector3.new(0, 5 + halfHeight, 0)
+
+        hrp.CFrame = CFrame.new(startPos)
+        task.wait(0.12)
+
+        local steps = 20
+        for i = 1, steps do
+            if not hrp.Parent then return end
+            local t = i / steps
+            hrp.CFrame = CFrame.new(startPos:Lerp(target, t))
+            task.wait(0.04)
+        end
+
+        for i = 1, 6 do
+            if not hrp.Parent then return end
+            hrp.CFrame = CFrame.new(target + Vector3.new(
+                (math.random() - 0.5) * 0.6,
+                (math.random() - 0.5) * 0.6,
+                (math.random() - 0.5) * 0.6
+            ))
+            task.wait(0.1)
+        end
+
+        if hrp.Parent then
+            hrp.CFrame = CFrame.new(target + Vector3.new(0, 2.5, 0))
+            task.wait(0.1)
+            hrp.CFrame = CFrame.new(target)
+            task.wait(0.25)
+        end
+    end
+
+    local function collectGlove(glove)
+        if not glove then return false end
+
+        local hardCF = SPECIAL_CFRAMES[glove.name]
+        if hardCF then
+            tpToCFrame(hardCF)
+            task.wait(0.5)
+            return true
+        end
+
+        if #glove.touchParts == 0 then return false end
+
+        if USE_CF_TP[glove.name] then
+            for _, part in ipairs(glove.touchParts) do
+                if part and part.Parent then
+                    pcall(function()
+                        if part.CanTouch == false then part.CanTouch = true end
+                    end)
+                    tpToCFrame(part.CFrame)
+                    task.wait(0.35)
+                    local char = LP.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        hrp.AssemblyLinearVelocity = Vector3.zero
+                        hrp.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
+            end
+            return true
+        end
+
+        for _, part in ipairs(glove.touchParts) do
+            if part and part.Parent then
+                walkIntoPart(part)
+            end
+        end
+        return true
+    end
+
+    local gloveData = {}
+    local allGlovesByName = {}
+
+    local function scanMaps()
+        gloveData = {}
+        allGlovesByName = {}
+        if not root then return end
+        for _, mapFolder in ipairs(root:GetChildren()) do
+            if mapFolder:IsA("Model") or mapFolder:IsA("Folder") then
+                local gloves = {}
+                for _, entry in ipairs(mapFolder:GetChildren()) do
+                    local parts = {}
+                    if entry:IsA("BasePart") and entry:FindFirstChild("TouchInterest") then
+                        table.insert(parts, entry)
+                    end
+                    for _, d in ipairs(entry:GetDescendants()) do
+                        if d:IsA("BasePart") and d:FindFirstChild("TouchInterest") then
+                            table.insert(parts, d)
+                        end
+                    end
+                    if #parts > 0 then
+                        table.sort(parts, function(a, b)
+                            local aM = a.Name:lower() == entry.Name:lower()
+                            local bM = b.Name:lower() == entry.Name:lower()
+                            if aM ~= bM then return aM end
+                            return a.Size.Magnitude > b.Size.Magnitude
+                        end)
+                        local glove = {
+                            name = entry.Name,
+                            folder = entry,
+                            touchParts = parts,
+                            mapName = mapFolder.Name,
+                        }
+                        table.insert(gloves, glove)
+                        allGlovesByName[entry.Name] = glove
+                    end
+                end
+                table.sort(gloves, function(a,b) return a.name:lower() < b.name:lower() end)
+                gloveData[mapFolder.Name] = gloves
+            end
+        end
+    end
+
+    if isInMinigame then scanMaps() end
+
+    local mainW, mainH = isInMinigame and 820 or 360, isInMinigame and 620 or 150
+
+    local gui = mk("ScreenGui",{Name="GloveCollector",ResetOnSpawn=false},PG)
+    local main = mk("Frame",{
+        Size=UDim2.new(0,mainW,0,mainH),
+        Position=UDim2.new(0.5,-mainW/2,0.5,-mainH/2),
+        BackgroundColor3=C.bg, BorderSizePixel=0,
+        Draggable=true, Active=true,
+    }, gui)
+    round(main,12); stroke(main,C.brd)
+
+    local tb = mk("Frame",{
+        Size=UDim2.new(1,0,0,44), BackgroundColor3=C.surf, BorderSizePixel=0,
+    }, main)
+    round(tb,12)
+    mk("Frame",{
+        Size=UDim2.new(1,0,0,14), Position=UDim2.new(0,0,1,-14),
+        BackgroundColor3=C.surf, BorderSizePixel=0,
+    }, tb)
+
+    mk("TextLabel",{
+        Size=UDim2.new(1,-50,0,20), Position=UDim2.new(0,14,0,4),
+        BackgroundTransparency=1, Text="Find The Gloves - v25",
+        TextColor3=C.text, TextSize=14, Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left,
+    }, tb)
+
+    local subLbl = mk("TextLabel",{
+        Size=UDim2.new(1,-50,0,14), Position=UDim2.new(0,14,0,24),
+        BackgroundTransparency=1,
+        Text= isInMinigame and ("In minigame — "..#ALL_GLOVES.." gloves") or "In main game",
+        TextColor3= isInMinigame and C.ok or C.warn,
+        TextSize=10, Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left,
+    }, tb)
+
+    local closeBtnC = mk("TextButton",{
+        Size=UDim2.new(0,28,0,28), Position=UDim2.new(1,-36,0,8),
+        BackgroundColor3=C.surfAlt, Text="X", TextColor3=C.text,
+        Font=Enum.Font.GothamBold, TextSize=13, BorderSizePixel=0,
+    }, tb)
+    round(closeBtnC,7)
+    closeBtnC.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+    local tpPlaceBtn = mk("TextButton",{
+        Size=UDim2.new(1,-28,0,44), Position=UDim2.new(0,14,0,58),
+        BackgroundColor3=C.pur,
+        Text= isInMinigame and "Already in minigame" or "TP to Find The Gloves Place",
+        TextColor3=C.text, TextSize=13, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, main)
+    round(tpPlaceBtn,8); stroke(tpPlaceBtn,C.brd)
+    tpPlaceBtn.MouseButton1Click:Connect(function()
+        if isInMinigame then
+            subLbl.Text = "Already in minigame"
+            subLbl.TextColor3 = C.warn
+            return
+        end
+        subLbl.Text = "Teleporting..."
+        pcall(function() TS:Teleport(PLACE_ID, LP) end)
+    end)
+
+    if not isInMinigame or not root then
+        mk("TextLabel",{
+            Size=UDim2.new(1,-28,0,20), Position=UDim2.new(0,14,0,110),
+            BackgroundTransparency=1, Text="Press T to teleport",
+            TextColor3=C.dim, TextSize=11, Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Center,
+        }, main)
+        UIS.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode == Enum.KeyCode.X then gui:Destroy() end
+            if input.KeyCode == Enum.KeyCode.T and not isInMinigame then
+                pcall(function() TS:Teleport(PLACE_ID, LP) end)
+            end
+        end)
+        return
+    end
+
+    main.Size = UDim2.new(0, 820, 0, 620)
+    main.Position = UDim2.new(0.5, -410, 0.5, -310)
+
+    local sidebar = mk("Frame",{
+        Size=UDim2.new(0,230,1,-58),
+        Position=UDim2.new(0,14,0,52),
+        BackgroundColor3=C.surf, BorderSizePixel=0,
+    }, main)
+    round(sidebar,8); stroke(sidebar,C.brd)
+
+    mk("TextLabel",{
+        Size=UDim2.new(1,-16,0,18), Position=UDim2.new(0,8,0,6),
+        BackgroundTransparency=1, Text="ALL GLOVES ("..#ALL_GLOVES..")",
+        TextColor3=C.text, TextSize=11, Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left,
+    }, sidebar)
+
+    local searchBox = mk("TextBox",{
+        Size=UDim2.new(1,-16,0,24), Position=UDim2.new(0,8,0,26),
+        BackgroundColor3=C.bg, BorderSizePixel=0,
+        Text="", PlaceholderText="search...",
+        TextColor3=C.text, TextSize=11, Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,
+        ClearTextOnFocus=false,
+    }, sidebar)
+    round(searchBox,5); stroke(searchBox,C.brd)
+
+    mk("TextLabel",{
+        Size=UDim2.new(1,-16,0,12), Position=UDim2.new(0,8,0,52),
+        BackgroundTransparency=1, Text="blue=CF · orange=CF+walk · green=walk",
+        TextColor3=C.dim, TextSize=9, Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,
+    }, sidebar)
+
+    local sideScroll = mk("ScrollingFrame",{
+        Size=UDim2.new(1,-16,1,-72), Position=UDim2.new(0,8,0,68),
+        BackgroundColor3=C.bg, BorderSizePixel=0,
+        ScrollBarThickness=3, ScrollBarImageColor3=C.brd,
+        CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+    }, sidebar)
+    round(sideScroll,6); stroke(sideScroll,C.brd,0.5)
+    mk("UIListLayout",{Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder},sideScroll)
+    mk("UIPadding",{
+        PaddingTop=UDim.new(0,4), PaddingBottom=UDim.new(0,4),
+        PaddingLeft=UDim.new(0,4), PaddingRight=UDim.new(0,4),
+    },sideScroll)
+
+    local mainArea = mk("Frame",{
+        Size=UDim2.new(1,-272,1,-58),
+        Position=UDim2.new(0,258,0,52),
+        BackgroundTransparency=1,
+    }, main)
+
+    local collectAllBtn = mk("TextButton",{
+        Size=UDim2.new(0.4,0,0,36), Position=UDim2.new(0,0,0,0),
+        BackgroundColor3=C.ok, Text="COLLECT ALL",
+        TextColor3=C.text, TextSize=12, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, mainArea)
+    round(collectAllBtn,8); stroke(collectAllBtn,C.brd)
+
+    local autoWatchBtn = mk("TextButton",{
+        Size=UDim2.new(0.3,-6,0,36), Position=UDim2.new(0.4,6,0,0),
+        BackgroundColor3=C.surfAlt, Text="▶ AUTO-WATCH",
+        TextColor3=C.text, TextSize=11, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, mainArea)
+    round(autoWatchBtn,8); stroke(autoWatchBtn,C.brd)
+
+    local rescanBtn = mk("TextButton",{
+        Size=UDim2.new(0.3,-12,0,36), Position=UDim2.new(0.7,12,0,0),
+        BackgroundColor3=C.blu, Text="Rescan (R)",
+        TextColor3=C.text, TextSize=11, Font=Enum.Font.GothamBold, BorderSizePixel=0,
+    }, mainArea)
+    round(rescanBtn,8); stroke(rescanBtn,C.brd)
+
+    local statusLbl = mk("TextLabel",{
+        Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,0,0,42),
+        BackgroundTransparency=1, Text="Ready",
+        TextColor3=C.dim, TextSize=11, Font=Enum.Font.Gotham,
+        TextXAlignment=Enum.TextXAlignment.Left,
+    }, mainArea)
+    local function setStatus(t,c) statusLbl.Text=t; statusLbl.TextColor3=c or C.dim end
+
+    local scroll = mk("ScrollingFrame",{
+        Size=UDim2.new(1,0,1,-70), Position=UDim2.new(0,0,0,70),
+        BackgroundColor3=C.surf, BorderSizePixel=0,
+        ScrollBarThickness=4, ScrollBarImageColor3=C.brd,
+        CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+    }, mainArea)
+    round(scroll,10); stroke(scroll,C.brd)
+
+    local busy = false
+    local autoWatchOn = false
+    local autoWatchThread = nil
+    local collected = {}
+
+    local function rebuildSidebar()
+        for _, c in ipairs(sideScroll:GetChildren()) do
+            if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+        end
+
+        local query = searchBox.Text:lower()
+        local names = {}
+        for _, n in ipairs(ALL_GLOVES) do
+            if query == "" or n:lower():find(query, 1, true) then
+                table.insert(names, n)
+            end
+        end
+        table.sort(names, function(a,b)
+            local aP = pinned[a] and 1 or 0
+            local bP = pinned[b] and 1 or 0
+            if aP ~= bP then return aP > bP end
+            return a:lower() < b:lower()
+        end)
+
+        local order = 0
+        for _, name in ipairs(names) do
+            order = order + 1
+            local glove = allGlovesByName[name]
+            local isSpawned = glove ~= nil and #glove.touchParts > 0
+            local hasHardCF = SPECIAL_CFRAMES[name] ~= nil
+            local isCFGlove = USE_CF_TP[name] == true
+            local isPinned = pinned[name] == true
+            local isQuest = QUEST_GLOVES[name] == true
+            local wasCollected = collected[name] == true
+
+            local rowBg = C.surfAlt
+            if wasCollected then rowBg = Color3.fromRGB(30,45,30)
+            elseif isPinned then rowBg = Color3.fromRGB(60,45,25)
+            elseif hasHardCF then rowBg = Color3.fromRGB(30,50,60)
+            elseif isCFGlove and isSpawned then rowBg = Color3.fromRGB(50,40,55)
+            elseif isSpawned then rowBg = Color3.fromRGB(30,50,35) end
+
+            local row = mk("Frame",{
+                Size=UDim2.new(1,0,0,24), BackgroundColor3=rowBg,
+                BorderSizePixel=0, LayoutOrder=order,
+            }, sideScroll)
+            round(row,4)
+
+            local pinBtn = mk("TextButton",{
+                Size=UDim2.new(0,20,1,0), BackgroundTransparency=1,
+                Text=isPinned and "★" or "☆",
+                TextColor3=isPinned and C.gold or C.dim,
+                TextSize=13, Font=Enum.Font.GothamBold,
+            }, row)
+            pinBtn.MouseButton1Click:Connect(function()
+                pinned[name] = not pinned[name]
+                rebuildSidebar()
+            end)
+
+            local dotColor = C.dim
+            if wasCollected then dotColor = C.gold
+            elseif hasHardCF then dotColor = C.blu
+            elseif isCFGlove and isSpawned then dotColor = C.pur
+            elseif isSpawned then dotColor = C.ok
+            elseif isQuest then dotColor = C.warn end
+
+            mk("Frame",{
+                Size=UDim2.new(0,6,0,6), Position=UDim2.new(0,22,0.5,-3),
+                BackgroundColor3=dotColor, BorderSizePixel=0,
+            }, row)
+
+            local label = name
+            if wasCollected then
+                label = name .. "  ✓"
+            elseif hasHardCF then
+                label = name .. "  (CF)"
+            elseif isCFGlove then
+                label = name .. "  (cf-tp)"
+            elseif not isSpawned then
+                label = name .. (isQuest and "  (quest)" or "  (not here)")
+            end
+
+            local nameBtn = mk("TextButton",{
+                Size=UDim2.new(1,-30,1,0), Position=UDim2.new(0,30,0,0),
+                BackgroundTransparency=1, Text=label,
+                TextColor3=C.text,
+                TextSize=10, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,
+            }, row)
+            nameBtn.MouseButton1Click:Connect(function()
+                if hasHardCF then
+                    setStatus("TP (CF): " .. name, C.blu)
+                    task.spawn(function()
+                        tpToCFrame(SPECIAL_CFRAMES[name])
+                        task.wait(0.5)
+                        collected[name] = true
+                        rebuildSidebar()
+                        setStatus(name .. " teleported", C.ok)
+                    end)
+                    return
+                end
+                if not isSpawned then
+                    setStatus(name .. " not in GloveLocation", C.warn)
+                    return
+                end
+                setStatus("TP: " .. name, C.blu)
+                task.spawn(function()
+                    collectGlove(glove)
+                    collected[name] = true
+                    rebuildSidebar()
+                    setStatus(name .. " teleported", C.ok)
+                end)
+            end)
+        end
+    end
+
+    local function rebuildMain()
+        for _, c in ipairs(scroll:GetChildren()) do
+            if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+        end
+
+        scanMaps()
+
+        if not scroll:FindFirstChildOfClass("UIListLayout") then
+            mk("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder},scroll)
+        end
+        if not scroll:FindFirstChildOfClass("UIPadding") then
+            mk("UIPadding",{
+                PaddingTop=UDim.new(0,8), PaddingBottom=UDim.new(0,8),
+                PaddingLeft=UDim.new(0,8), PaddingRight=UDim.new(0,8),
+            },scroll)
+        end
+
+        local order = 0
+        local totalSpawned = 0
+
+        order = order + 1
+        local specialSection = mk("Frame",{
+            Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1, LayoutOrder=order,
+        }, scroll)
+        mk("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder}, specialSection)
+        local specialHeader = mk("Frame",{
+            Size=UDim2.new(1,0,0,28), BackgroundColor3=Color3.fromRGB(35,45,60),
+            BorderSizePixel=0,
+        }, specialSection)
+        round(specialHeader,8)
+        mk("TextLabel",{
+            Size=UDim2.new(1,-20,0,20), Position=UDim2.new(0,10,0.5,-10),
+            BackgroundTransparency=1, Text="HARDCODED CFrame (not in map)",
+            TextColor3=C.blu, TextSize=12, Font=Enum.Font.GothamBold,
+            TextXAlignment=Enum.TextXAlignment.Left,
+        }, specialHeader)
+
+        for name, cf in pairs(SPECIAL_CFRAMES) do
+            local row = mk("Frame",{
+                Size=UDim2.new(1,-8,0,26), BackgroundColor3=C.surfAlt,
+                BorderSizePixel=0, LayoutOrder=2,
+            }, specialSection)
+            round(row,5)
+            mk("TextLabel",{
+                Size=UDim2.new(1,-70,1,0), Position=UDim2.new(0,10,0,0),
+                BackgroundTransparency=1, Text=name .. "  (CF)",
+                TextColor3=C.text, TextSize=11, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,
+            }, row)
+            mk("TextLabel",{
+                Size=UDim2.new(0,60,1,0), Position=UDim2.new(1,-66,0,0),
+                BackgroundTransparency=1, Text="GET",
+                TextColor3=C.blu, TextSize=10, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Right,
+            }, row)
+            local btn = mk("TextButton",{
+                Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Text="",
+            }, row)
+            btn.MouseButton1Click:Connect(function()
+                setStatus("GET (CF): " .. name, C.blu)
+                task.spawn(function()
+                    tpToCFrame(cf)
+                    task.wait(0.5)
+                    collected[name] = true
+                    rebuildSidebar()
+                    setStatus(name .. " teleported", C.ok)
+                end)
+            end)
+        end
+
+        local sortedMaps = {}
+        for name in pairs(gloveData) do table.insert(sortedMaps, name) end
+        table.sort(sortedMaps)
+
+        for _, mapName in ipairs(sortedMaps) do
+            local gloves = gloveData[mapName]
+            if #gloves > 0 then
+                totalSpawned = totalSpawned + #gloves
+                order = order + 1
+                local section = mk("Frame",{
+                    Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+                    BackgroundTransparency=1, LayoutOrder=order,
+                }, scroll)
+                mk("UIListLayout",{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder}, section)
+
+                local header = mk("Frame",{
+                    Size=UDim2.new(1,0,0,32), BackgroundColor3=C.panel, BorderSizePixel=0,
+                }, section)
+                round(header,8)
+                mk("Frame",{
+                    Size=UDim2.new(0,3,0,16), Position=UDim2.new(0,6,0.5,-8),
+                    BackgroundColor3=C.blu, BorderSizePixel=0,
+                }, header)
+                mk("TextLabel",{
+                    Size=UDim2.new(1,-20,0,20), Position=UDim2.new(0,18,0.5,-10),
+                    BackgroundTransparency=1, Text=mapName .. "  (" .. #gloves .. ")",
+                    TextColor3=C.text, TextSize=12, Font=Enum.Font.GothamBold,
+                    TextXAlignment=Enum.TextXAlignment.Left,
+                }, header)
+
+                local body = mk("Frame",{
+                    Size=UDim2.new(1,-8,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+                    Position=UDim2.new(0,8,0,0), BackgroundTransparency=1,
+                    LayoutOrder=2,
+                }, section)
+                mk("UIListLayout",{Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder}, body)
+
+                for i, glove in ipairs(gloves) do
+                    local r = mk("Frame",{
+                        Size=UDim2.new(1,0,0,26), BackgroundColor3=C.surfAlt,
+                        BorderSizePixel=0, LayoutOrder=i,
+                    }, body)
+                    round(r,5)
+
+                    local method = USE_CF_TP[glove.name] and "cf" or "walk"
+                    local mc = USE_CF_TP[glove.name] and C.pur or C.ok
+
+                    mk("Frame",{
+                        Size=UDim2.new(0,3,0,14), Position=UDim2.new(0,6,0.5,-7),
+                        BackgroundColor3=mc, BorderSizePixel=0,
+                    }, r)
+
+                    mk("TextLabel",{
+                        Size=UDim2.new(1,-90,1,0), Position=UDim2.new(0,16,0,0),
+                        BackgroundTransparency=1, Text=glove.name,
+                        TextColor3=C.text, TextSize=11, Font=Enum.Font.Gotham,
+                        TextXAlignment=Enum.TextXAlignment.Left,
+                    }, r)
+                    mk("TextLabel",{
+                        Size=UDim2.new(0,70,1,0), Position=UDim2.new(1,-76,0,0),
+                        BackgroundTransparency=1,
+                        Text=("["..#glove.touchParts.."] "..method),
+                        TextColor3=mc, TextSize=9, Font=Enum.Font.Code,
+                        TextXAlignment=Enum.TextXAlignment.Right,
+                    }, r)
+                    local btn = mk("TextButton",{
+                        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Text="",
+                    }, r)
+                    btn.MouseButton1Click:Connect(function()
+                        setStatus("GET: " .. glove.name, C.blu)
+                        task.spawn(function()
+                            collectGlove(glove)
+                            collected[glove.name] = true
+                            rebuildSidebar()
+                            setStatus(glove.name .. " teleported", C.ok)
+                        end)
+                    end)
+                end
+            end
+        end
+
+        return totalSpawned
+    end
+
+    collectAllBtn.MouseButton1Click:Connect(function()
+        if busy then setStatus("Already running...", C.warn); return end
+        busy = true
+        task.spawn(function()
+            for name, cf in pairs(SPECIAL_CFRAMES) do
+                setStatus("GET (CF): " .. name, C.blu)
+                tpToCFrame(cf)
+                task.wait(0.5)
+                collected[name] = true
+            end
+
+            local total, done = 0, 0
+            for _, gloves in pairs(gloveData) do total = total + #gloves end
+            for mapName, gloves in pairs(gloveData) do
+                for _, g in ipairs(gloves) do
+                    done = done + 1
+                    setStatus(("... %s %d/%d - %s"):format(mapName, done, total, g.name), C.blu)
+                    collectGlove(g)
+                    collected[g.name] = true
+                    task.wait(0.2)
+                end
+            end
+            rebuildSidebar()
+            setStatus(("DONE! %d gloves"):format(total), C.ok)
+            busy = false
+        end)
+    end)
+
+    local function stopAutoWatch()
+        autoWatchOn = false
+        if autoWatchThread then task.cancel(autoWatchThread); autoWatchThread = nil end
+        autoWatchBtn.BackgroundColor3 = C.surfAlt
+        autoWatchBtn.Text = "▶ AUTO-WATCH"
+        setStatus("Auto-watch stopped", C.warn)
+    end
+
+    local function startAutoWatch()
+        autoWatchOn = true
+        autoWatchBtn.BackgroundColor3 = C.ok
+        autoWatchBtn.Text = "● AUTO-WATCH"
+        setStatus("Auto-watch running", C.ok)
+        autoWatchThread = task.spawn(function()
+            while autoWatchOn do
+                scanMaps()
+                local toCollect = {}
+                for name, glove in pairs(allGlovesByName) do
+                    if not collected[name] and #glove.touchParts > 0 then
+                        table.insert(toCollect, glove)
+                    end
+                end
+                if #toCollect > 0 and not busy then
+                    busy = true
+                    for _, g in ipairs(toCollect) do
+                        if not autoWatchOn then break end
+                        setStatus(("AUTO: %s"):format(g.name), C.blu)
+                        collectGlove(g)
+                        collected[g.name] = true
+                        task.wait(0.3)
+                    end
+                    busy = false
+                    rebuildSidebar()
+                end
+                rebuildSidebar()
+                task.wait(3)
+            end
+        end)
+    end
+
+    autoWatchBtn.MouseButton1Click:Connect(function()
+        if autoWatchOn then stopAutoWatch() else startAutoWatch() end
+    end)
+
+    rescanBtn.MouseButton1Click:Connect(function()
+        if busy then setStatus("Busy", C.warn); return end
+        local n = rebuildMain()
+        rebuildSidebar()
+        setStatus(("Rescanned — %d spawned"):format(n), C.ok)
+    end)
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(rebuildSidebar)
+
+    local n = rebuildMain()
+    rebuildSidebar()
+    setStatus(("Ready — %d spawned"):format(n), C.ok)
+
+    UIS.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.X then gui:Destroy() end
+        if input.KeyCode == Enum.KeyCode.R and not busy then
+            local nn = rebuildMain()
+            rebuildSidebar()
+            setStatus(("Rescanned — %d spawned"):format(nn), C.ok)
+        end
+    end)
+end
+
+-- ==================== COLLECTER HELPER PAGE ====================
+local function loadCollecterHelper(parent)
+    local frame, gloveLbl, _, content = makeHelperPanel(parent, "🧤 Collecter (Find The Gloves)", {
+        gloveName = "Collecter",
+    })
+
+    local disclaimer = Instance.new("TextLabel")
+    disclaimer.Size = UDim2.new(1, 0, 0, 56)
+    disclaimer.Position = UDim2.new(0, 0, 0, 0)
+    disclaimer.BackgroundColor3 = Color3.fromRGB(60, 45, 25)
+    disclaimer.Text = "⚠ Disclaimer: Takes a while to run. If it misses any gloves, TP to the individual gloves it missed."
+    disclaimer.TextColor3 = COLORS.warn
+    disclaimer.TextSize = 11
+    disclaimer.Font = Enum.Font.GothamSemibold
+    disclaimer.TextWrapped = true
+    disclaimer.TextXAlignment = Enum.TextXAlignment.Left
+    disclaimer.TextYAlignment = Enum.TextYAlignment.Center
+    disclaimer.Parent = content
+    addCorner(disclaimer, 6)
+    addStroke(disclaimer, 0.3)
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 20)
+    statusLbl.Position = UDim2.new(0, 0, 0, 64)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Ready"
+    statusLbl.TextColor3 = COLORS.muted
+    statusLbl.TextSize = 12
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = content
+
+    makeButton(content, "▶ Launch Glove Collector", 90, COLORS.button, function()
+        statusLbl.Text = "🚀 Launching collector..."
+        statusLbl.TextColor3 = COLORS.warn
+        task.spawn(function()
+            pcall(function() launchGloveCollector() end)
+            statusLbl.Text = "✅ Collector launched (own window)"
+            statusLbl.TextColor3 = COLORS.green
+        end)
+    end)
+
+    makeButton(content, "❌ Close Collector Window", 134, COLORS.danger, function()
+        local existing = PlayerGui:FindFirstChild("GloveCollector")
+        if existing then
+            existing:Destroy()
+            statusLbl.Text = "Collector window closed"
+            statusLbl.TextColor3 = COLORS.muted
+        else
+            statusLbl.Text = "No collector window open"
+            statusLbl.TextColor3 = COLORS.muted
+        end
+    end)
 end
 
 -- ==================== WIP PAGE LAYOUT ====================
@@ -1578,8 +2434,8 @@ local function buildOperaGXPage(parent)
     }
 
     local function tpToPortal(n)
-        local ws = workspace:FindFirstChild("Workspace")
-        local lobby = ws and ws:FindFirstChild("Lobby")
+        local wsI = workspace:FindFirstChild("Workspace")
+        local lobby = wsI and wsI:FindFirstChild("Lobby")
         local portal = lobby and lobby:FindFirstChild("Portal"..n)
         if not portal then
             statusLbl.Text = "❌ Missing Portal"..n
@@ -1721,6 +2577,7 @@ loadPlateHelper(glovePages["Plate"])
 loadRiftshotHelper(glovePages["Riftshot"])
 loadSuctionHelper(glovePages["Suction"])
 loadBindHelper(glovePages["Bind"])
+loadCollecterHelper(glovePages["Collecter"])
 
 -- ==================== MAIN TAB SWITCHING ====================
 local function showMainPage(pageName)
@@ -1740,7 +2597,6 @@ end
 
 -- ==================== GLOBAL KEYBINDS ====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    -- Alt always toggles cursor unlock (even if game consumed it)
     if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
         toggleCursorUnlock()
         refreshCursorBtn()
