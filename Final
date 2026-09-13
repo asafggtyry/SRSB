@@ -1,11 +1,9 @@
 --[[
-    Clean Tabbed Helper GUI with Sidebar
-    Tabs: Home | Glove
-    Home: Brazil Teleport + Main Game Teleport + Keypad Helper
-    Glove sub-tabs: Debug | Elude | Boxing | Fan | Untitled | Plate | Riftshot | Suction | WIP | Bind
-    WIP sub-tabs: Counter | OperaGX | Camera (placeholder)
-    Every glove tab shows: glove ownership + place warning (if applicable).
-    Global keys: P = toggle cursor unlock, Q = minimize
+    Clean Tabbed Helper GUI
+    Top Nav: Home | Gloves | WIP
+    Gloves: scrollable list on the right; helper panel on the left
+    WIP sub-tabs: Counter | OperaGX | Camera
+    Global keys: Alt = toggle cursor unlock, Q = minimize
 ]]
 
 local Players = game:GetService("Players")
@@ -27,7 +25,7 @@ end
 local COLORS = {
     window = Color3.fromRGB(24, 24, 28),
     topBar = Color3.fromRGB(18, 18, 21),
-    sidebar = Color3.fromRGB(30, 30, 34),
+    navBar = Color3.fromRGB(26, 26, 30),
     sidebarButton = Color3.fromRGB(38, 38, 43),
     sidebarActive = Color3.fromRGB(55, 95, 150),
     content = Color3.fromRGB(28, 28, 32),
@@ -43,7 +41,6 @@ local COLORS = {
     green = Color3.fromRGB(60, 170, 90),
     blue = Color3.fromRGB(60, 120, 200),
     purple = Color3.fromRGB(150, 60, 200),
-    accent = Color3.fromRGB(255, 60, 90),
     warn = Color3.fromRGB(255, 180, 60),
 }
 
@@ -90,7 +87,6 @@ local function teleportToPlace(placeId, statusLabel, pendingText)
     end)
 end
 
--- Glove ownership check
 local function ownsGlove(gloveName)
     local folder = LocalPlayer:FindFirstChild("_unlockedGloves")
     if not folder then return nil end
@@ -103,13 +99,12 @@ local function inPlace(placeId)
     return game.PlaceId == placeId
 end
 
--- Standardized helper panel builder
 local function makeHelperPanel(parent, title, opts)
     opts = opts or {}
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.94, 0, 0.94, 0)
-    frame.Position = UDim2.new(0.03, 0, 0.03, 0)
+    frame.Size = UDim2.new(0.96, 0, 0.96, 0)
+    frame.Position = UDim2.new(0.02, 0, 0.02, 0)
     frame.BackgroundColor3 = COLORS.panel
     frame.BorderSizePixel = 0
     frame.Parent = parent
@@ -186,7 +181,7 @@ local function makeHelperPanel(parent, title, opts)
     return frame, gloveStatusLbl, placeWarnLbl, content, contentTop
 end
 
--- ==================== CURSOR UNLOCKER (GLOBAL) ====================
+-- ==================== CURSOR UNLOCKER (GLOBAL, Alt toggle) ====================
 local cursorUnlocked = false
 local cursorUnlockLoop = nil
 
@@ -196,10 +191,6 @@ local function unlockCursor()
     cursorUnlockLoop = RunService.RenderStepped:Connect(function()
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
         UserInputService.MouseIconEnabled = true
-        if Camera and Camera.CameraType ~= Enum.CameraType.Custom
-           and Camera.CameraType ~= Enum.CameraType.Scriptable then
-            pcall(function() Camera.CameraType = Enum.CameraType.Custom end)
-        end
     end)
 end
 
@@ -261,7 +252,6 @@ dragHandle.ZIndex = 2
 dragHandle.Parent = topBar
 titleLabel.ZIndex = 3
 
--- Cursor unlock button
 local cursorBtn = Instance.new("TextButton")
 cursorBtn.Size = UDim2.new(0, 30, 0, 30)
 cursorBtn.Position = UDim2.new(1, -110, 0, 7)
@@ -305,70 +295,69 @@ addCorner(closeBtn, 7)
 addStroke(closeBtn, 0.2)
 closeBtn.ZIndex = 4
 
--- Cursor button behavior
 local function refreshCursorBtn()
-    if cursorUnlocked then
-        cursorBtn.BackgroundColor3 = COLORS.sidebarActive
-    else
-        cursorBtn.BackgroundColor3 = COLORS.sidebarButton
-    end
+    cursorBtn.BackgroundColor3 = cursorUnlocked and COLORS.sidebarActive or COLORS.sidebarButton
 end
 cursorBtn.MouseButton1Click:Connect(function()
     toggleCursorUnlock()
     refreshCursorBtn()
 end)
 
+-- Nav bar (Home | Gloves | WIP)
+local navBar = Instance.new("Frame")
+navBar.Size = UDim2.new(1, 0, 0, 40)
+navBar.Position = UDim2.new(0, 0, 0, 44)
+navBar.BackgroundColor3 = COLORS.navBar
+navBar.BorderSizePixel = 0
+navBar.Parent = mainFrame
+
+local navButtons = {}
+local navOrder = {"Home", "Gloves", "WIP"}
+for i, name in ipairs(navOrder) do
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 110, 1, -8)
+    b.Position = UDim2.new(0, 8 + (i-1)*114, 0, 4)
+    b.BackgroundColor3 = COLORS.sidebarButton
+    b.Text = name
+    b.TextColor3 = COLORS.muted
+    b.TextSize = 14
+    b.Font = Enum.Font.GothamSemibold
+    b.AutoButtonColor = false
+    b.BorderSizePixel = 0
+    b.Parent = navBar
+    addCorner(b, 7)
+    addStroke(b, 0.5)
+    b.MouseEnter:Connect(function()
+        if b.BackgroundColor3 ~= COLORS.sidebarActive then
+            b.BackgroundColor3 = COLORS.buttonHover
+            b.TextColor3 = COLORS.text
+        end
+    end)
+    b.MouseLeave:Connect(function()
+        if b.BackgroundColor3 ~= COLORS.sidebarActive then
+            b.BackgroundColor3 = COLORS.sidebarButton
+            b.TextColor3 = COLORS.muted
+        end
+    end)
+    navButtons[name] = b
+end
+
+-- Body
 local bodyContainer = Instance.new("Frame")
-bodyContainer.Size = UDim2.new(1, 0, 1, -44)
-bodyContainer.Position = UDim2.new(0, 0, 0, 44)
-bodyContainer.BackgroundTransparency = 1
+bodyContainer.Size = UDim2.new(1, 0, 1, -84)
+bodyContainer.Position = UDim2.new(0, 0, 0, 84)
+bodyContainer.BackgroundColor3 = COLORS.content
+bodyContainer.BorderSizePixel = 0
+bodyContainer.ClipsDescendants = true
 bodyContainer.Parent = mainFrame
 
-local sidebar = Instance.new("Frame")
-sidebar.Size = UDim2.new(0, 145, 1, 0)
-sidebar.BackgroundColor3 = COLORS.sidebar
-sidebar.BorderSizePixel = 0
-sidebar.ClipsDescendants = true
-sidebar.Parent = bodyContainer
-
-local sidebarButtons = Instance.new("Frame")
-sidebarButtons.Size = UDim2.new(1, 0, 1, 0)
-sidebarButtons.BackgroundTransparency = 1
-sidebarButtons.Parent = sidebar
-
-local sidebarTitle = Instance.new("TextLabel")
-sidebarTitle.Size = UDim2.new(1, -24, 0, 28)
-sidebarTitle.Position = UDim2.new(0, 12, 0, 14)
-sidebarTitle.BackgroundTransparency = 1
-sidebarTitle.Text = "HELPER HUB"
-sidebarTitle.TextColor3 = COLORS.text
-sidebarTitle.TextSize = 15
-sidebarTitle.Font = Enum.Font.GothamBold
-sidebarTitle.TextXAlignment = Enum.TextXAlignment.Left
-sidebarTitle.Parent = sidebar
-sidebarTitle.ZIndex = 2
-
-local contentArea = Instance.new("Frame")
-contentArea.Size = UDim2.new(1, -145, 1, 0)
-contentArea.Position = UDim2.new(0, 145, 0, 0)
-contentArea.BackgroundColor3 = COLORS.content
-contentArea.BorderSizePixel = 0
-contentArea.ClipsDescendants = true
-contentArea.Parent = bodyContainer
-
-local contentDivider = Instance.new("Frame")
-contentDivider.Size = UDim2.new(0, 1, 1, 0)
-contentDivider.Position = UDim2.new(0, 145, 0, 0)
-contentDivider.BackgroundColor3 = COLORS.border
-contentDivider.BorderSizePixel = 0
-contentDivider.Parent = bodyContainer
-
+-- Minimize / drag
 local minimized = false
 local originalSize = mainFrame.Size
-
 local function toggleMinimize()
     minimized = not minimized
     bodyContainer.Visible = not minimized
+    navBar.Visible = not minimized
     if minimized then
         mainFrame.Size = UDim2.new(0, 260, 0, 44)
         minimizeBtn.Text = "□"
@@ -415,56 +404,24 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-local function createSidebarButton(text, yOffset, parent)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -18, 0, 42)
-    btn.Position = UDim2.new(0, 9, 0, yOffset)
-    btn.BackgroundColor3 = COLORS.sidebarButton
-    btn.Text = text
-    btn.TextColor3 = COLORS.muted
-    btn.TextSize = 14
-    btn.Font = Enum.Font.GothamSemibold
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.Parent = parent
-    addCorner(btn, 7)
-    addStroke(btn, 0.65)
-    btn.MouseEnter:Connect(function()
-        if btn.BackgroundColor3 ~= COLORS.sidebarActive then
-            btn.BackgroundColor3 = COLORS.buttonHover
-            btn.TextColor3 = COLORS.text
-        end
-    end)
-    btn.MouseLeave:Connect(function()
-        if btn.BackgroundColor3 ~= COLORS.sidebarActive then
-            btn.BackgroundColor3 = COLORS.sidebarButton
-            btn.TextColor3 = COLORS.muted
-        end
-    end)
-    return btn
-end
-
-local homeTabBtn = createSidebarButton("🏠  Home", 52, sidebarButtons)
-local gloveTabBtn = createSidebarButton("🧤  Glove", 101, sidebarButtons)
-
-local function updateSidebarHighlight(activeBtn)
-    homeTabBtn.BackgroundColor3 = (activeBtn == homeTabBtn) and COLORS.sidebarActive or COLORS.sidebarButton
-    gloveTabBtn.BackgroundColor3 = (activeBtn == gloveTabBtn) and COLORS.sidebarActive or COLORS.sidebarButton
-    homeTabBtn.TextColor3 = (activeBtn == homeTabBtn) and COLORS.text or COLORS.muted
-    gloveTabBtn.TextColor3 = (activeBtn == gloveTabBtn) and COLORS.text or COLORS.muted
-end
-
+-- ==================== PAGES ====================
 local homePage = Instance.new("Frame")
 homePage.Size = UDim2.new(1, 0, 1, 0)
 homePage.BackgroundTransparency = 1
 homePage.Visible = true
-homePage.Parent = contentArea
+homePage.Parent = bodyContainer
 
-local glovePage = Instance.new("Frame")
-glovePage.Size = UDim2.new(1, 0, 1, 0)
-glovePage.BackgroundTransparency = 1
-glovePage.Visible = false
-glovePage.Parent = contentArea
+local glovesPage = Instance.new("Frame")
+glovesPage.Size = UDim2.new(1, 0, 1, 0)
+glovesPage.BackgroundTransparency = 1
+glovesPage.Visible = false
+glovesPage.Parent = bodyContainer
+
+local wipPage = Instance.new("Frame")
+wipPage.Size = UDim2.new(1, 0, 1, 0)
+wipPage.BackgroundTransparency = 1
+wipPage.Visible = false
+wipPage.Parent = bodyContainer
 
 -- ==================== HOME PAGE ====================
 local homeTitle = Instance.new("TextLabel")
@@ -536,7 +493,6 @@ makeHomeCard(147, "🏠 Main Game", "Teleport to Main Game",
     "Sends you back to the Slap Battles main game.",
     function(s) teleportToPlace(PLACE_IDS.MainGame, s, "⏳ Returning to main game...") end)
 
--- Keypad
 local keypadSection = Instance.new("Frame")
 keypadSection.Size = UDim2.new(1, -40, 0, 220)
 keypadSection.Position = UDim2.new(0, 20, 0, 238)
@@ -637,122 +593,88 @@ Players.PlayerAdded:Connect(refreshKeypad)
 Players.PlayerRemoving:Connect(refreshKeypad)
 refreshKeypad()
 
--- ==================== GLOVE PAGE SUB-TABS ====================
-local subTabBar = Instance.new("Frame")
-subTabBar.Size = UDim2.new(1, -24, 0, 42)
-subTabBar.Position = UDim2.new(0, 12, 0, 12)
-subTabBar.BackgroundColor3 = COLORS.panel
-subTabBar.BorderSizePixel = 0
-subTabBar.Parent = glovePage
+-- ==================== GLOVES PAGE LAYOUT ====================
+-- Left: glove content area;  Right: scrollable glove list
+local glovesContent = Instance.new("Frame")
+glovesContent.Size = UDim2.new(1, -186, 1, 0)
+glovesContent.Position = UDim2.new(0, 0, 0, 0)
+glovesContent.BackgroundTransparency = 1
+glovesContent.ClipsDescendants = true
+glovesContent.Parent = glovesPage
 
-local subTabButtons = {}
--- "Plunger" renamed to "Suction"; "Bind" appended
-local subTabNames = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Plate", "Riftshot", "Suction", "WIP", "Bind"}
+local glovesDivider = Instance.new("Frame")
+glovesDivider.Size = UDim2.new(0, 1, 1, -12)
+glovesDivider.Position = UDim2.new(1, -186, 0, 6)
+glovesDivider.BackgroundColor3 = COLORS.border
+glovesDivider.BorderSizePixel = 0
+glovesDivider.Parent = glovesPage
 
-local tabWidth = 56
-local tabSpacing = 60
+local glovesListPanel = Instance.new("Frame")
+glovesListPanel.Size = UDim2.new(0, 184, 1, -12)
+glovesListPanel.Position = UDim2.new(1, -186, 0, 6)
+glovesListPanel.BackgroundColor3 = COLORS.panel
+glovesListPanel.BorderSizePixel = 0
+glovesListPanel.Parent = glovesPage
+addCorner(glovesListPanel, 8)
+addStroke(glovesListPanel, 0.4)
 
-for i, name in ipairs(subTabNames) do
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, tabWidth, 1, -8)
-    btn.Position = UDim2.new(0, 4 + (i-1)*tabSpacing, 0, 4)
-    btn.BackgroundColor3 = (i == 1) and COLORS.sidebarActive or COLORS.sidebarButton
-    btn.Text = name
-    btn.TextColor3 = (i == 1) and COLORS.text or COLORS.muted
-    btn.TextSize = 10
-    btn.Font = Enum.Font.GothamSemibold
-    btn.AutoButtonColor = false
-    btn.BorderSizePixel = 0
-    btn.Parent = subTabBar
-    addCorner(btn, 7)
-    addStroke(btn, 0.45)
-    btn.MouseEnter:Connect(function()
-        if btn.BackgroundColor3 ~= COLORS.sidebarActive then
-            btn.BackgroundColor3 = COLORS.buttonHover
-            btn.TextColor3 = COLORS.text
+local glovesListHeader = Instance.new("TextLabel")
+glovesListHeader.Size = UDim2.new(1, -16, 0, 22)
+glovesListHeader.Position = UDim2.new(0, 8, 0, 6)
+glovesListHeader.BackgroundTransparency = 1
+glovesListHeader.Text = "GLOVES"
+glovesListHeader.TextColor3 = COLORS.text
+glovesListHeader.TextSize = 12
+glovesListHeader.Font = Enum.Font.GothamBold
+glovesListHeader.TextXAlignment = Enum.TextXAlignment.Left
+glovesListHeader.Parent = glovesListPanel
+
+local glovesScroll = Instance.new("ScrollingFrame")
+glovesScroll.Size = UDim2.new(1, -10, 1, -34)
+glovesScroll.Position = UDim2.new(0, 5, 0, 30)
+glovesScroll.BackgroundTransparency = 1
+glovesScroll.BorderSizePixel = 0
+glovesScroll.ScrollBarThickness = 6
+glovesScroll.ScrollBarImageColor3 = COLORS.muted
+glovesScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+glovesScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+glovesScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+glovesScroll.Parent = glovesListPanel
+
+local glovesList = Instance.new("UIListLayout")
+glovesList.Padding = UDim.new(0, 4)
+glovesList.SortOrder = Enum.SortOrder.LayoutOrder
+glovesList.Parent = glovesScroll
+
+local gloveListButtons = {}
+local function makeGloveListButton(name, order)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -6, 0, 30)
+    b.BackgroundColor3 = COLORS.sidebarButton
+    b.Text = name
+    b.TextColor3 = COLORS.muted
+    b.TextSize = 12
+    b.Font = Enum.Font.GothamSemibold
+    b.AutoButtonColor = false
+    b.BorderSizePixel = 0
+    b.LayoutOrder = order
+    b.Parent = glovesScroll
+    addCorner(b, 6)
+    addStroke(b, 0.55)
+    b.MouseEnter:Connect(function()
+        if b.BackgroundColor3 ~= COLORS.sidebarActive then
+            b.BackgroundColor3 = COLORS.buttonHover
+            b.TextColor3 = COLORS.text
         end
     end)
-    btn.MouseLeave:Connect(function()
-        if btn.BackgroundColor3 ~= COLORS.sidebarActive then
-            btn.BackgroundColor3 = COLORS.sidebarButton
-            btn.TextColor3 = COLORS.muted
+    b.MouseLeave:Connect(function()
+        if b.BackgroundColor3 ~= COLORS.sidebarActive then
+            b.BackgroundColor3 = COLORS.sidebarButton
+            b.TextColor3 = COLORS.muted
         end
     end)
-    subTabButtons[name] = btn
-end
-
-local subPageContainer = Instance.new("Frame")
-subPageContainer.Size = UDim2.new(1, -24, 1, -66)
-subPageContainer.Position = UDim2.new(0, 12, 0, 54)
-subPageContainer.BackgroundTransparency = 1
-subPageContainer.Parent = glovePage
-
-local pages = {}
-for _, name in ipairs(subTabNames) do
-    local p = Instance.new("Frame")
-    p.Size = UDim2.new(1, 0, 1, 0)
-    p.BackgroundTransparency = 1
-    p.Visible = false
-    p.Parent = subPageContainer
-    pages[name] = p
-end
-pages["Debug"].Visible = true
-
--- ==================== KEYBIND MANAGEMENT ====================
-local activeKeybinds = {}
-local eludeMazeStartFunc = nil
-local counterLeverFunc = nil
-local counterFlyFunc = nil
-local counterGloveFunc = nil
-local counterHideFunc = nil
-local currentWipSub = "Counter"
-
-local function clearKeybinds()
-    for _, c in pairs(activeKeybinds) do
-        if c then c:Disconnect() end
-    end
-    activeKeybinds = {}
-end
-
-local function setActiveKeybinds(pageName)
-    clearKeybinds()
-
-    if pageName == "Elude" then
-        table.insert(activeKeybinds, UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
-            if input.KeyCode == Enum.KeyCode.RightControl and eludeMazeStartFunc then
-                eludeMazeStartFunc()
-            end
-        end))
-    elseif pageName == "WIP" and currentWipSub == "Counter" then
-        table.insert(activeKeybinds, UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
-            if input.KeyCode == Enum.KeyCode.R then
-                if counterLeverFunc then counterLeverFunc() end
-            elseif input.KeyCode == Enum.KeyCode.H then
-                if counterFlyFunc then counterFlyFunc() end
-            elseif input.KeyCode == Enum.KeyCode.G then
-                if counterGloveFunc then counterGloveFunc() end
-            elseif input.KeyCode == Enum.KeyCode.F then
-                if counterHideFunc then counterHideFunc() end
-            end
-        end))
-    end
-end
-
-local function showSubPage(pageName)
-    for name, p in pairs(pages) do
-        p.Visible = (name == pageName)
-    end
-    for name, btn in pairs(subTabButtons) do
-        btn.BackgroundColor3 = (name == pageName) and COLORS.sidebarActive or COLORS.sidebarButton
-        btn.TextColor3 = (name == pageName) and COLORS.text or COLORS.muted
-    end
-    setActiveKeybinds(pageName)
-end
-
-for name, btn in pairs(subTabButtons) do
-    btn.MouseButton1Click:Connect(function() showSubPage(name) end)
+    gloveListButtons[name] = b
+    return b
 end
 
 -- ==================== HELPER: simple button row ====================
@@ -773,6 +695,48 @@ local function makeButton(parent, text, y, color, onClick)
     b.MouseButton1Click:Connect(onClick)
     return b
 end
+
+-- ==================== GLOVE PAGES ====================
+local glovePages = {}
+local gloveOrder = {"Debug", "Elude", "Boxing", "Fan", "Untitled", "Plate", "Riftshot", "Suction", "Bind"}
+for i, name in ipairs(gloveOrder) do
+    local p = Instance.new("Frame")
+    p.Size = UDim2.new(1, 0, 1, 0)
+    p.BackgroundTransparency = 1
+    p.Visible = false
+    p.Parent = glovesContent
+    glovePages[name] = p
+    makeGloveListButton(name, i)
+end
+glovePages["Debug"].Visible = true
+
+-- ==================== KEYBIND STATE ====================
+local eludeMazeStartFunc = nil
+local counterLeverFunc = nil
+local counterFlyFunc = nil
+local counterGloveFunc = nil
+local counterHideFunc = nil
+local currentMainPage = "Home"
+local currentGlovePage = "Debug"
+local currentWipSub = "Counter"
+
+local function highlightGloveList(activeName)
+    for name, b in pairs(gloveListButtons) do
+        b.BackgroundColor3 = (name == activeName) and COLORS.sidebarActive or COLORS.sidebarButton
+        b.TextColor3 = (name == activeName) and COLORS.text or COLORS.muted
+    end
+end
+
+local function showGlovePage(name)
+    for n, p in pairs(glovePages) do p.Visible = (n == name) end
+    currentGlovePage = name
+    highlightGloveList(name)
+end
+
+for name, b in pairs(gloveListButtons) do
+    b.MouseButton1Click:Connect(function() showGlovePage(name) end)
+end
+highlightGloveList("Debug")
 
 -- ==================== DEBUG HELPER ====================
 local function loadDebugHelper(parent)
@@ -804,7 +768,6 @@ local function loadDebugHelper(parent)
         digitStatus[i] = lbl
     end
 
-    -- Only remaining button: teleport to keypad
     makeButton(content, "Teleport to Keypad", 60, COLORS.button, function()
         local dr = workspace:FindFirstChild("Debug Room")
         if not dr then return end
@@ -817,8 +780,6 @@ local function loadDebugHelper(parent)
         if hrp then hrp.CFrame = part.CFrame * CFrame.new(0, 2, 3) end
     end)
 
-    -- Reads an attribute first (MazeNumber.Text / AdminNumber.ContentText),
-    -- then falls back to the .Text property if the object is a TextLabel.
     local function readNumber(obj, attrName)
         if not obj then return "?" end
         local v = obj:GetAttribute(attrName)
@@ -829,14 +790,13 @@ local function loadDebugHelper(parent)
         return "?"
     end
 
-    -- Code updater loop
     task.spawn(function()
         while frame.Parent do
             task.wait(2)
             local dr = workspace:FindFirstChild("Debug Room")
             if not dr then continue end
 
-            -- D1: count Ducks in DuckTable
+            -- D1
             local d1 = "?"
             local dt = dr:FindFirstChild("DuckTable")
             dt = dt and dt:FindFirstChild("DuckTable")
@@ -848,42 +808,32 @@ local function loadDebugHelper(parent)
                 d1 = tostring(n)
             end
 
-            -- D2: Debug Room.AdminGloves.GlovesCode.SurfaceGui.AdminNumber -> attribute "ContentText"
+            -- D2 from AdminGloves.GlovesCode.SurfaceGui.AdminNumber attr "ContentText"
             local d2 = "?"
             local ag = dr:FindFirstChild("AdminGloves")
             local gc = ag and ag:FindFirstChild("GlovesCode")
             local sg2 = gc and gc:FindFirstChild("SurfaceGui")
             local an = sg2 and sg2:FindFirstChild("AdminNumber")
-            if an then
-                d2 = readNumber(an, "ContentText")
-            elseif sg2 then
-                d2 = readNumber(sg2, "ContentText")
-            end
+            if an then d2 = readNumber(an, "ContentText")
+            elseif sg2 then d2 = readNumber(sg2, "ContentText") end
 
-            -- D3: Debug Room.Maze.MazePrize.SurfaceGui.MazeNumber -> attribute "Text"
+            -- D3 from Maze.MazePrize.SurfaceGui.MazeNumber attr "Text"
             local d3 = "?"
             local maze = dr:FindFirstChild("Maze")
             local mp = maze and maze:FindFirstChild("MazePrize")
             local sg3 = mp and mp:FindFirstChild("SurfaceGui")
             local mn = sg3 and sg3:FindFirstChild("MazeNumber")
-            if mn then
-                d3 = readNumber(mn, "Text")
-            elseif sg3 then
-                d3 = readNumber(sg3, "Text")
-            end
+            if mn then d3 = readNumber(mn, "Text")
+            elseif sg3 then d3 = readNumber(sg3, "Text") end
 
-            -- D4: hardcoded 7
             local d4 = "7"
 
             digitStatus[1].Text = "D1: "..d1
             digitStatus[1].TextColor3 = d1 ~= "?" and COLORS.green or COLORS.red
-
             digitStatus[2].Text = "D2: "..d2
             digitStatus[2].TextColor3 = d2 ~= "?" and COLORS.green or COLORS.red
-
             digitStatus[3].Text = "D3: "..d3
             digitStatus[3].TextColor3 = d3 ~= "?" and COLORS.green or COLORS.red
-
             digitStatus[4].Text = "D4: "..d4
             digitStatus[4].TextColor3 = COLORS.green
 
@@ -914,7 +864,7 @@ local function loadEludeHelper(parent)
         teleportToPlace(PLACE_IDS.EludeMaze, statusLbl, "⏳ Teleporting to Elude Maze...")
     end)
 
-    local mazeBtn = makeButton(content, "▶ Start Maze", 74, COLORS.button, function()
+    local function startMaze()
         if not inPlace(PLACE_IDS.EludeMaze) then
             statusLbl.Text = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
             statusLbl.TextColor3 = COLORS.warn
@@ -947,7 +897,11 @@ local function loadEludeHelper(parent)
                 statusLbl.TextColor3 = COLORS.green
             end
         end)
-    end)
+    end
+
+    eludeMazeStartFunc = startMaze
+
+    makeButton(content, "▶ Start Maze", 74, COLORS.button, startMaze)
 
     makeButton(content, "🧤 Teleport to Glove", 118, COLORS.button, function()
         local ruins = workspace:FindFirstChild("ruins")
@@ -1080,23 +1034,15 @@ local function loadFanHelper(parent)
         yPos = yPos + 44
     end
 
-    addStep("1. Start Quest (Talk to Pablo)", function()
-        task.spawn(function() startQuest() end)
-    end)
+    addStep("1. Start Quest (Talk to Pablo)", function() task.spawn(startQuest) end)
     addStep("2. TP to Key & Acquire", function()
-        task.spawn(function()
-            tpAndFire({"QuestStuff", "Key"}, "Key", "KeyAcquired", 1, 10)
-        end)
+        task.spawn(function() tpAndFire({"QuestStuff", "Key"}, "Key", "KeyAcquired", 1, 10) end)
     end)
     addStep("3. TP to Cage & Claim Badge", function()
-        task.spawn(function()
-            tpAndFire({"Buildings", "oog's cage", "Door"}, "Cage", "KeyBadgeReward", 1, 5)
-        end)
+        task.spawn(function() tpAndFire({"Buildings", "oog's cage", "Door"}, "Cage", "KeyBadgeReward", 1, 5) end)
     end)
     addStep("4. Talk to Pablo Again", function()
-        task.spawn(function()
-            tpAndFire({"NPCS", "Pablo Pinkypoo"}, "Pablo", "SuitUpClown", 1, 5)
-        end)
+        task.spawn(function() tpAndFire({"NPCS", "Pablo Pinkypoo"}, "Pablo", "SuitUpClown", 1, 5) end)
     end)
     addStep("⚡ AUTO COMPLETE QUEST ⚡", function()
         task.spawn(function()
@@ -1179,7 +1125,6 @@ local function loadPlateHelper(parent)
 
     local surviveActive = false
     local clearLoop = nil
-    local surviveThread = nil
 
     local function survive()
         if not inPlace(PLACE_IDS.PlatePlace) then
@@ -1187,9 +1132,7 @@ local function loadPlateHelper(parent)
             statusLbl.TextColor3 = COLORS.warn
             return
         end
-        if surviveActive then
-            statusLbl.Text = "Already surviving"; return
-        end
+        if surviveActive then statusLbl.Text = "Already surviving"; return end
         local obstaclesFolder = workspace:FindFirstChild("Obstacles")
         if not obstaclesFolder then
             statusLbl.Text = "❌ Obstacles folder missing"; statusLbl.TextColor3 = COLORS.red; return
@@ -1203,7 +1146,7 @@ local function loadPlateHelper(parent)
             for _, c in ipairs(obstaclesFolder:GetChildren()) do c:Destroy() end
         end)
 
-        surviveThread = task.spawn(function()
+        task.spawn(function()
             local remaining = 120
             while remaining > 0 and surviveActive do
                 statusLbl.Text = string.format("⏳ %ds remaining (clearing obstacles)", remaining)
@@ -1220,7 +1163,7 @@ local function loadPlateHelper(parent)
     makeButton(content, "🧹 Survive (clear obstacles for 2 min)", 74, COLORS.button, survive)
 end
 
--- ==================== RIFTSHOT HELPER ====================
+-- ==================== RIFTSHOT HELPER (NEW LOGIC) ====================
 local function loadRiftshotHelper(parent)
     local frame, gloveLbl, _, content = makeHelperPanel(parent, "🎯 Riftshot Glove Helper", {
         gloveName = "Riftshot",
@@ -1237,54 +1180,33 @@ local function loadRiftshotHelper(parent)
     statusLbl.TextXAlignment = Enum.TextXAlignment.Left
     statusLbl.Parent = content
 
-    local isClearing = false
-    local clearConnection, childAddedConnection
-
-    local function stopClearing()
-        if clearConnection then clearConnection:Disconnect(); clearConnection = nil end
-        if childAddedConnection then childAddedConnection:Disconnect(); childAddedConnection = nil end
-        isClearing = false
-        statusLbl.Text = "Stopped"
-        statusLbl.TextColor3 = COLORS.muted
-    end
-
-    local function startClearing()
-        if isClearing then return end
+    makeButton(content, "▶ Complete Target Practice", 30, COLORS.button, function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then hrp.CFrame = CFrame.new(-260, 16, 485) end
-        task.wait(0.5)
-        local tf = workspace:FindFirstChild("Sharpshooter Sam's Targets")
-        if not tf then
-            statusLbl.Text = "❌ Targets folder missing"
+        if not hrp then
+            statusLbl.Text = "❌ No character"
             statusLbl.TextColor3 = COLORS.red
             return
         end
-        isClearing = true
-        statusLbl.Text = "🧹 Clearing..."
-        statusLbl.TextColor3 = COLORS.green
-
-        clearConnection = RunService.Heartbeat:Connect(function()
-            if not isClearing then clearConnection:Disconnect(); return end
-            for _, c in ipairs(tf:GetChildren()) do c:Destroy() end
-        end)
-        childAddedConnection = tf.ChildAdded:Connect(function(c)
-            if isClearing then c:Destroy() end
-        end)
-    end
-
-    local helperBtn = makeButton(content, "▶ Start Helper", 30, COLORS.button, function()
-        if isClearing then
-            stopClearing()
-            helperBtn.Text = "▶ Start Helper"
+        hrp.CFrame = CFrame.new(-260, 16, 477)
+        statusLbl.Text = "⏳ Teleported, waiting 1s..."
+        statusLbl.TextColor3 = COLORS.warn
+        task.wait(1)
+        local re = ReplicatedStorage:FindFirstChild("RemoteEvents")
+        local tp = re and re:FindFirstChild("TargetPractice")
+        local oc = tp and tp:FindFirstChild("OnComplete")
+        if oc then
+            oc:FireServer()
+            statusLbl.Text = "✅ Fired TargetPractice.OnComplete"
+            statusLbl.TextColor3 = COLORS.green
         else
-            startClearing()
-            helperBtn.Text = "⏹ Stop Helper"
+            statusLbl.Text = "❌ TargetPractice.OnComplete not found"
+            statusLbl.TextColor3 = COLORS.red
         end
     end)
 end
 
--- ==================== SUCTION HELPER (formerly Plunger) ====================
+-- ==================== SUCTION HELPER (was Plunger) ====================
 local function loadSuctionHelper(parent)
     local frame, gloveLbl, _, content = makeHelperPanel(parent, "🪠 Suction Glove Helper", {
         gloveName = "Plunger",
@@ -1345,23 +1267,40 @@ local function loadSuctionHelper(parent)
     end)
 end
 
--- ==================== WIP PAGE ====================
-local wipInnerBar = Instance.new("Frame")
-wipInnerBar.Size = UDim2.new(1, -12, 0, 34)
-wipInnerBar.Position = UDim2.new(0, 6, 0, 0)
-wipInnerBar.BackgroundColor3 = COLORS.panelAlt
-wipInnerBar.BorderSizePixel = 0
-wipInnerBar.Parent = pages["WIP"]
-addCorner(wipInnerBar, 7)
-addStroke(wipInnerBar, 0.5)
+-- ==================== BIND HELPER (placeholder) ====================
+local function loadBindHelper(parent)
+    local frame, _, _, content = makeHelperPanel(parent, "🔗 Bind Helper", {})
+
+    local noteLbl = Instance.new("TextLabel")
+    noteLbl.Size = UDim2.new(1, 0, 0, 80)
+    noteLbl.Position = UDim2.new(0, 0, 0, 0)
+    noteLbl.BackgroundTransparency = 1
+    noteLbl.Text = "⚠ Bind script was not attached.\nPaste the Bind script and this tab will be wired up.\nPlaceholder for now."
+    noteLbl.TextColor3 = COLORS.warn
+    noteLbl.TextSize = 12
+    noteLbl.Font = Enum.Font.Gotham
+    noteLbl.TextWrapped = true
+    noteLbl.TextXAlignment = Enum.TextXAlignment.Left
+    noteLbl.TextYAlignment = Enum.TextYAlignment.Top
+    noteLbl.Parent = content
+end
+
+-- ==================== WIP PAGE LAYOUT ====================
+local wipSubBar = Instance.new("Frame")
+wipSubBar.Size = UDim2.new(1, -16, 0, 36)
+wipSubBar.Position = UDim2.new(0, 8, 0, 8)
+wipSubBar.BackgroundColor3 = COLORS.panel
+wipSubBar.BorderSizePixel = 0
+wipSubBar.Parent = wipPage
+addCorner(wipSubBar, 7)
+addStroke(wipSubBar, 0.5)
 
 local wipInnerButtons = {}
 local wipInnerNames = {"Counter", "OperaGX", "Camera"}
-
 for i, name in ipairs(wipInnerNames) do
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1/#wipInnerNames, -6, 1, -6)
-    b.Position = UDim2.new((i-1)/#wipInnerNames, 3, 0, 3)
+    b.Size = UDim2.new(1/#wipInnerNames, -8, 1, -8)
+    b.Position = UDim2.new((i-1)/#wipInnerNames, 4, 0, 4)
     b.BackgroundColor3 = (i == 1) and COLORS.sidebarActive or COLORS.sidebarButton
     b.Text = name
     b.TextColor3 = (i == 1) and COLORS.text or COLORS.muted
@@ -1369,17 +1308,29 @@ for i, name in ipairs(wipInnerNames) do
     b.Font = Enum.Font.GothamSemibold
     b.AutoButtonColor = false
     b.BorderSizePixel = 0
-    b.Parent = wipInnerBar
+    b.Parent = wipSubBar
     addCorner(b, 6)
     addStroke(b, 0.4)
+    b.MouseEnter:Connect(function()
+        if b.BackgroundColor3 ~= COLORS.sidebarActive then
+            b.BackgroundColor3 = COLORS.buttonHover
+            b.TextColor3 = COLORS.text
+        end
+    end)
+    b.MouseLeave:Connect(function()
+        if b.BackgroundColor3 ~= COLORS.sidebarActive then
+            b.BackgroundColor3 = COLORS.sidebarButton
+            b.TextColor3 = COLORS.muted
+        end
+    end)
     wipInnerButtons[name] = b
 end
 
 local wipContent = Instance.new("Frame")
-wipContent.Size = UDim2.new(1, 0, 1, -42)
-wipContent.Position = UDim2.new(0, 0, 0, 42)
+wipContent.Size = UDim2.new(1, 0, 1, -52)
+wipContent.Position = UDim2.new(0, 0, 0, 52)
 wipContent.BackgroundTransparency = 1
-wipContent.Parent = pages["WIP"]
+wipContent.Parent = wipPage
 
 local wipPages = {}
 for _, name in ipairs(wipInnerNames) do
@@ -1399,7 +1350,6 @@ local function showWipInner(name)
         b.TextColor3 = (n == name) and COLORS.text or COLORS.muted
     end
     currentWipSub = name
-    setActiveKeybinds("WIP")
 end
 
 for name, b in pairs(wipInnerButtons) do
@@ -1713,8 +1663,8 @@ end
 -- ==================== WIP: CAMERA ====================
 local function buildCameraPage(parent)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0.94, 0, 0.94, 0)
-    frame.Position = UDim2.new(0.03, 0, 0.03, 0)
+    frame.Size = UDim2.new(0.96, 0, 0.96, 0)
+    frame.Position = UDim2.new(0.02, 0, 0.02, 0)
     frame.BackgroundColor3 = COLORS.panel
     frame.BorderSizePixel = 0
     frame.Parent = parent
@@ -1761,58 +1711,66 @@ buildCounterPage(wipPages["Counter"])
 buildOperaGXPage(wipPages["OperaGX"])
 buildCameraPage(wipPages["Camera"])
 
--- ==================== BIND HELPER (placeholder — no script provided) ====================
-local function loadBindHelper(parent)
-    local frame, gloveLbl, _, content = makeHelperPanel(parent, "🔗 Bind Helper", {})
+-- ==================== LOAD GLOVE HELPERS ====================
+loadDebugHelper(glovePages["Debug"])
+loadEludeHelper(glovePages["Elude"])
+loadBoxingHelper(glovePages["Boxing"])
+loadFanHelper(glovePages["Fan"])
+loadUntitledHelper(glovePages["Untitled"])
+loadPlateHelper(glovePages["Plate"])
+loadRiftshotHelper(glovePages["Riftshot"])
+loadSuctionHelper(glovePages["Suction"])
+loadBindHelper(glovePages["Bind"])
 
-    local noteLbl = Instance.new("TextLabel")
-    noteLbl.Size = UDim2.new(1, 0, 0, 80)
-    noteLbl.Position = UDim2.new(0, 0, 0, 0)
-    noteLbl.BackgroundTransparency = 1
-    noteLbl.Text = "⚠ Bind script was not attached.\nPaste the Bind script and this tab will be wired up.\nPlaceholder for now."
-    noteLbl.TextColor3 = COLORS.warn
-    noteLbl.TextSize = 12
-    noteLbl.Font = Enum.Font.Gotham
-    noteLbl.TextWrapped = true
-    noteLbl.TextXAlignment = Enum.TextXAlignment.Left
-    noteLbl.TextYAlignment = Enum.TextYAlignment.Top
-    noteLbl.Parent = content
+-- ==================== MAIN TAB SWITCHING ====================
+local function showMainPage(pageName)
+    homePage.Visible = (pageName == "Home")
+    glovesPage.Visible = (pageName == "Gloves")
+    wipPage.Visible = (pageName == "WIP")
+    for n, b in pairs(navButtons) do
+        b.BackgroundColor3 = (n == pageName) and COLORS.sidebarActive or COLORS.sidebarButton
+        b.TextColor3 = (n == pageName) and COLORS.text or COLORS.muted
+    end
+    currentMainPage = pageName
 end
 
--- ==================== LOAD GLOVE HELPERS ====================
-loadDebugHelper(pages["Debug"])
-loadEludeHelper(pages["Elude"])
-loadBoxingHelper(pages["Boxing"])
-loadFanHelper(pages["Fan"])
-loadUntitledHelper(pages["Untitled"])
-loadPlateHelper(pages["Plate"])
-loadRiftshotHelper(pages["Riftshot"])
-loadSuctionHelper(pages["Suction"])
-loadBindHelper(pages["Bind"])
+for name, b in pairs(navButtons) do
+    b.MouseButton1Click:Connect(function() showMainPage(name) end)
+end
 
 -- ==================== GLOBAL KEYBINDS ====================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    -- Alt always toggles cursor unlock (even if game consumed it)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        toggleCursorUnlock()
+        refreshCursorBtn()
+        return
+    end
     if gameProcessed then return end
+
     if input.KeyCode == Enum.KeyCode.P then
         toggleCursorUnlock()
         refreshCursorBtn()
     elseif input.KeyCode == Enum.KeyCode.Q then
         toggleMinimize()
+    elseif currentMainPage == "Gloves" and currentGlovePage == "Elude" then
+        if input.KeyCode == Enum.KeyCode.RightControl and eludeMazeStartFunc then
+            eludeMazeStartFunc()
+        end
+    elseif currentMainPage == "WIP" and currentWipSub == "Counter" then
+        if input.KeyCode == Enum.KeyCode.R then
+            if counterLeverFunc then counterLeverFunc() end
+        elseif input.KeyCode == Enum.KeyCode.H then
+            if counterFlyFunc then counterFlyFunc() end
+        elseif input.KeyCode == Enum.KeyCode.G then
+            if counterGloveFunc then counterGloveFunc() end
+        elseif input.KeyCode == Enum.KeyCode.F then
+            if counterHideFunc then counterHideFunc() end
+        end
     end
 end)
 
--- ==================== MAIN TAB SWITCHING ====================
-local function showMainPage(pageName)
-    homePage.Visible = (pageName == "home")
-    glovePage.Visible = (pageName == "glove")
-    updateSidebarHighlight(pageName == "home" and homeTabBtn or gloveTabBtn)
-    clearKeybinds()
-end
-
-homeTabBtn.MouseButton1Click:Connect(function() showMainPage("home") end)
-gloveTabBtn.MouseButton1Click:Connect(function() showMainPage("glove") end)
-
-updateSidebarHighlight(homeTabBtn)
-showMainPage("home")
+refreshCursorBtn()
+showMainPage("Home")
 
 print("Helper Hub loaded successfully.")
