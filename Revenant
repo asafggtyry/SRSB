@@ -1,0 +1,577 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+
+-- ==========================================
+-- ⚙️ CONFIGURATION & STATES
+-- ==========================================
+local States = {
+    AutoSlap = false,
+    DefendCornifier = false,
+    AutoFarm = false,
+    Noclip = true,
+    Fly = false,
+    AutoSkipDialogue = true,
+    SpeedHack = false,
+    Panic = false,
+    WalkSpeed = 60,
+    JumpPower = 100,
+    FlySpeed = 50,
+    SlapRange = 50
+}
+
+-- Panic helper storage (kept outside States so it isn't overwritten by GUI)
+local PanicCharacter = nil
+local PanicCFrame = nil
+
+local DialogueRemotes = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Common") and ReplicatedStorage.Modules.Common:FindFirstChild("DialogueServer") and ReplicatedStorage.Modules.Common.DialogueServer:FindFirstChild("Remotes")
+
+-- ==========================================
+-- 🖥️ GUI CREATION
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CheatMenu"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 260, 0, 500)
+MainFrame.Position = UDim2.new(0.5, -130, 0.5, -250)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Title.Text = "Ultimate Cheat Menu"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 16
+Title.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.Parent = Title
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Parent = MainFrame
+
+local Padding = Instance.new("UIPadding")
+Padding.PaddingTop = UDim.new(0, 45)
+Padding.Parent = MainFrame
+
+local function CreateButton(text, stateKey, isAction)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(0.9, 0, 0, 32)
+    Btn.BackgroundColor3 = if stateKey and States[stateKey] then Color3.fromRGB(0, 170, 0) else Color3.fromRGB(60, 60, 60)
+    Btn.Text = text .. (if not isAction then ": " .. (if States[stateKey] then "ON" else "OFF") else "")
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.SourceSansBold
+    Btn.TextSize = 14
+    Btn.Parent = MainFrame
+
+    local BtnCorner = Instance.new("UICorner")
+    BtnCorner.CornerRadius = UDim.new(0, 6)
+    BtnCorner.Parent = Btn
+
+    Btn.MouseButton1Click:Connect(function()
+        if isAction then
+            if stateKey == "TP_Cornifier" then
+                local dropZone = workspace:FindFirstChild("DropZone")
+                if dropZone and dropZone:FindFirstChild("NPC") then
+                    local model = dropZone.NPC:FindFirstChild("NPC") or dropZone.NPC
+                    if model and model.PrimaryPart then
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = model.PrimaryPart.CFrame * CFrame.new(0, 5, 5)
+                    end
+                end
+            elseif stateKey == "ForceRespawn" then
+                Btn.Text = "Respawning..."
+                local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                if Remotes and Remotes:FindFirstChild("RequestRetry") then
+                    Remotes.RequestRetry:FireServer()
+                end
+                task.wait(1)
+                Btn.Text = "Force Respawn (Unstick)"
+            elseif stateKey == "Rejoin" then
+                Btn.Text = "Rejoining Public..."
+                local TeleportOptions = Instance.new("TeleportOptions")
+                TeleportOptions.ShouldReserveServer = false
+                TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, TeleportOptions)
+            end
+        else
+            States[stateKey] = not States[stateKey]
+            Btn.BackgroundColor3 = if States[stateKey] then Color3.fromRGB(0, 170, 0) else Color3.fromRGB(60, 60, 60)
+            Btn.Text = text .. ": " .. (if States[stateKey] then "ON" else "OFF")
+        end
+    end)
+end
+
+local function CreateSlider(text, stateKey, minVal, maxVal)
+    local SliderFrame = Instance.new("Frame")
+    SliderFrame.Size = UDim2.new(0.9, 0, 0, 32)
+    SliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    SliderFrame.Parent = MainFrame
+
+    local SliderCorner = Instance.new("UICorner")
+    SliderCorner.CornerRadius = UDim.new(0, 6)
+    SliderCorner.Parent = SliderFrame
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 0.5, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text .. ": " .. States[stateKey] .. " studs"
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.Font = Enum.Font.SourceSansBold
+    Label.TextSize = 12
+    Label.Parent = SliderFrame
+
+    local BarBg = Instance.new("Frame")
+    BarBg.Size = UDim2.new(0.9, 0, 0, 6)
+    BarBg.Position = UDim2.new(0.05, 0, 0.7, 0)
+    BarBg.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    BarBg.Parent = SliderFrame
+
+    local BarCorner = Instance.new("UICorner")
+    BarCorner.CornerRadius = UDim.new(0, 4)
+    BarCorner.Parent = BarBg
+
+    local Fill = Instance.new("Frame")
+    Fill.Size = UDim2.new((States[stateKey] - minVal) / (maxVal - minVal), 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+    Fill.Parent = BarBg
+
+    local FillCorner = Instance.new("UICorner")
+    FillCorner.CornerRadius = UDim.new(0, 4)
+    FillCorner.Parent = Fill
+
+    local dragging = false
+
+    local function updateSlider(input)
+        local mouseX = input.Position.X
+        local barAbsPos = BarBg.AbsolutePosition.X
+        local barAbsSize = BarBg.AbsoluteSize.X
+        local percentage = math.clamp((mouseX - barAbsPos) / barAbsSize, 0, 1)
+
+        local value = math.floor(minVal + (maxVal - minVal) * percentage)
+        States[stateKey] = value
+        Fill.Size = UDim2.new(percentage, 0, 1, 0)
+        Label.Text = text .. ": " .. value .. " studs"
+    end
+
+    BarBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            updateSlider(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            updateSlider(input)
+        end
+    end)
+end
+
+-- Toggles
+CreateButton("Auto Slap (Minions Only)", "AutoSlap", false)
+CreateSlider("Slap Range", "SlapRange", 0, 250)
+CreateButton("Defend Cornifier", "DefendCornifier", false)
+CreateButton("Auto Farm Houses", "AutoFarm", false)
+CreateButton("Auto Skip Dialogue", "AutoSkipDialogue", false)
+CreateButton("Noclip", "Noclip", false)
+CreateButton("Fly", "Fly", false)
+CreateButton("Speed Hack", "SpeedHack", false)
+CreateButton("Panic (Void Safe)", "Panic", false)
+
+-- Actions
+CreateButton("Teleport to Count Cornifier", "TP_Cornifier", true)
+CreateButton("Force Respawn (Unstick)", "ForceRespawn", true)
+CreateButton("Rejoin NEW Public Server", "Rejoin", true)
+
+-- ==========================================
+-- 🧠 MAIN LOOPS
+-- ==========================================
+
+-- 1. Fast Loop (Noclip / Fly / Panic)
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    -- Noclip
+    if States.Noclip and hum.Health > 0 then
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
+        end
+    end
+
+    ---------------------------------------------------------------
+    -- PANIC TOGGLE (stay safe in void while ON, restore on OFF)
+    ---------------------------------------------------------------
+    if States.Panic and hum.Health > 0 then
+        if PanicCharacter ~= char then
+            -- Respawned while panic was on; forget old restore point
+            PanicCharacter = char
+            PanicCFrame = nil
+        elseif not PanicCFrame then
+            PanicCFrame = hrp.CFrame
+        end
+        hrp.CFrame = CFrame.new(0, 5000, 0)
+        hrp.Anchored = true
+        if hum.Health < hum.MaxHealth then
+            hum.Health = hum.MaxHealth
+        end
+    elseif PanicCharacter then
+        if hrp then
+            hrp.Anchored = false
+            if LocalPlayer.Character == PanicCharacter and PanicCFrame then
+                hrp.CFrame = PanicCFrame
+            end
+        end
+        PanicCharacter = nil
+        PanicCFrame = nil
+    end
+
+    ---------------------------------------------------------------
+    -- FLY (camera-relative with vertical control)
+    ---------------------------------------------------------------
+    if States.Fly and hum.Health > 0 then
+        hum.PlatformStand = true
+
+        local bv = hrp:FindFirstChild("FlyBV")
+        if not bv then
+            bv = Instance.new("BodyVelocity")
+            bv.Name = "FlyBV"
+            bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            bv.Velocity = Vector3.zero
+            bv.Parent = hrp
+        end
+
+        local bg = hrp:FindFirstChild("FlyBG")
+        if not bg then
+            bg = Instance.new("BodyGyro")
+            bg.Name = "FlyBG"
+            bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+            bg.P = 10000
+            bg.D = 500
+            bg.Parent = hrp
+        end
+
+        local cam = workspace.CurrentCamera
+        local dir = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0, 1, 0) end
+
+        if dir.Magnitude > 0 then
+            bv.Velocity = dir.Unit * States.FlySpeed
+        else
+            bv.Velocity = Vector3.zero
+        end
+        bg.CFrame = cam.CFrame
+    else
+        local bv = hrp:FindFirstChild("FlyBV")
+        local bg = hrp:FindFirstChild("FlyBG")
+        if bv then bv:Destroy() end
+        if bg then bg:Destroy() end
+        if hum.PlatformStand then
+            hum.PlatformStand = false
+            hum:ChangeState(Enum.HumanoidStateType.Landed)
+        end
+    end
+
+    if States.SpeedHack then
+        hum.WalkSpeed = States.WalkSpeed
+        hum.JumpPower = States.JumpPower
+    end
+end)
+
+-- 2. Auto Slap Loop
+task.spawn(function()
+    while task.wait() do
+        if States.AutoSlap then
+            local char = LocalPlayer.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local tool = char:FindFirstChildOfClass("Tool")
+                local hum = char:FindFirstChildOfClass("Humanoid")
+
+                if hrp and tool and tool.Name == "Lantern" and hum and hum.Health > 0 then
+                    local closestTarget = nil
+                    local shortestDistance = States.SlapRange
+
+                    for _, tag in ipairs({"PatrolNPC", "WaveMinion"}) do
+                        for _, npc in ipairs(CollectionService:GetTagged(tag)) do
+                            if npc:IsDescendantOf(workspace) then
+                                local mHum = npc:FindFirstChildOfClass("Humanoid")
+                                local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+
+                                if mHum and mHum.Health > 0 and mHrp then
+                                    local distance = (hrp.Position - mHrp.Position).Magnitude
+                                    if distance <= shortestDistance then
+                                        closestTarget = mHrp
+                                        shortestDistance = distance
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    if closestTarget then
+                        hrp.CFrame = closestTarget.CFrame * CFrame.new(0, 15, 0)
+                        task.wait(0.05)
+
+                        local glove = tool:FindFirstChild("Glove")
+                        if glove and glove:IsA("BasePart") then
+                            glove.Size = Vector3.new(25, 25, 25)
+                            glove.Transparency = 1
+                            glove.CanCollide = false
+                        end
+
+                        tool:Activate()
+                        local remote = tool:FindFirstChild("Network")
+                        if remote then remote:FireServer("Hit", closestTarget) end
+
+                        task.wait(0.5)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- 3. Defend Cornifier Loop
+task.spawn(function()
+    while task.wait() do
+        if States.DefendCornifier then
+            local char = LocalPlayer.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                local tool = char:FindFirstChildOfClass("Tool")
+                local hum = char:FindFirstChildOfClass("Humanoid")
+
+                if hrp and tool and tool.Name == "Lantern" and hum and hum.Health > 0 then
+                    local dropZone = workspace:FindFirstChild("DropZone")
+                    local cornifier = dropZone and (dropZone:FindFirstChild("NPC") and (dropZone.NPC:FindFirstChild("NPC") or dropZone.NPC))
+                    local cHrp = cornifier and (cornifier:FindFirstChild("HumanoidRootPart") or cornifier.PrimaryPart)
+
+                    if cHrp then
+                        local closestTarget = nil
+                        local minDist = 80
+
+                        for _, tag in ipairs({"PatrolNPC", "WaveMinion"}) do
+                            for _, npc in ipairs(CollectionService:GetTagged(tag)) do
+                                if npc:IsDescendantOf(workspace) then
+                                    local mHum = npc:FindFirstChildOfClass("Humanoid")
+                                    local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+
+                                    if mHum and mHum.Health > 0 and mHrp then
+                                        local distToCorn = (mHrp.Position - cHrp.Position).Magnitude
+                                        if distToCorn <= minDist then
+                                            closestTarget = mHrp
+                                            minDist = distToCorn
+                                        end
+                                    end
+                                end
+                            end
+                        end
+
+                        if closestTarget then
+                            hrp.CFrame = closestTarget.CFrame * CFrame.new(0, 15, 0)
+                            task.wait(0.05)
+
+                            local glove = tool:FindFirstChild("Glove")
+                            if glove and glove:IsA("BasePart") then
+                                glove.Size = Vector3.new(25, 25, 25)
+                                glove.Transparency = 1
+                                glove.CanCollide = false
+                            end
+
+                            tool:Activate()
+                            local remote = tool:FindFirstChild("Network")
+                            if remote then remote:FireServer("Hit", closestTarget) end
+
+                            task.wait(0.5)
+                            hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Helper: reliable ProximityPrompt trigger
+local function triggerPrompt(prompt, anchorPart)
+    local anchored = false
+    if anchorPart then
+        anchorPart.Anchored = true
+        anchored = true
+    end
+
+    local fired = false
+    if typeof(fireproximityprompt) == "function" then
+        fired = pcall(fireproximityprompt, prompt)
+    end
+    if not fired then
+        pcall(function()
+            prompt:InputHoldBegin()
+            task.wait((prompt.HoldDuration or 0) + 0.15)
+            prompt:InputHoldEnd()
+        end)
+    end
+
+    if anchored and anchorPart then
+        anchorPart.Anchored = false
+    end
+
+    return fired
+end
+
+-- 4. Auto Farm Houses (FIXED)
+task.spawn(function()
+    while task.wait(0.5) do
+        if not States.AutoFarm then continue end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not (char and char:FindFirstChild("HumanoidRootPart") and hum and hum.Health > 0) then
+            continue
+        end
+
+        local hrp = char.HumanoidRootPart
+
+        -- Real bag size based on player count
+        local pc = #Players:GetPlayers()
+        local bagSize = 600
+        if pc == 1 then
+            bagSize = 2000
+        elseif pc == 2 then
+            bagSize = 1500
+        elseif pc == 3 then
+            bagSize = 1000
+        end
+
+        local collected = char:GetAttribute("CollectedCandy") or 0
+        local bagFull = collected >= bagSize
+
+        if bagFull then
+            -- ============ DEPOSIT ============
+            local dropZone = workspace:FindFirstChild("DropZone")
+            if dropZone then
+                local done = false
+                for _, p in ipairs(dropZone:GetDescendants()) do
+                    if p:IsA("ProximityPrompt")
+                        and (p.ActionText == "Deposit Candy" or p.ActionText == "Vote Start")
+                        and p.Enabled then
+
+                        local parent = p.Parent
+                        local target
+                        if parent:IsA("BasePart") then
+                            target = parent
+                        elseif parent:IsA("Model") then
+                            target = parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
+                        end
+
+                        if target then
+                            hrp.CFrame = target.CFrame * CFrame.new(0, 3, 0)
+                            task.wait(0.2)
+                            triggerPrompt(p, hrp)
+                            task.wait(0.4)
+                            done = true
+                        end
+                        break
+                    end
+                end
+                if not done then task.wait(0.5) end
+            end
+        else
+            -- ============ FARM DOORS ============
+            local doors = CollectionService:GetTagged("Door")
+            local handled = false
+
+            for _, door in ipairs(doors) do
+                if door:GetAttribute("Enabled") and not door:GetAttribute("WasCollected") then
+                    local prompt = door:FindFirstChild("ProximityPrompt", true)
+                    if prompt and prompt.Enabled then
+                        local doorPart = prompt.Parent
+                        if doorPart and doorPart:IsA("BasePart") then
+                            hrp.CFrame = doorPart.CFrame * CFrame.new(0, 3, 0)
+                            task.wait(0.2)
+
+                            triggerPrompt(prompt, hrp)
+
+                            local t0 = tick()
+                            local opened = false
+                            while tick() - t0 < 7 do
+                                if workspace:GetAttribute("DialogueOpen") == true then
+                                    opened = true
+                                    break
+                                end
+                                task.wait(0.1)
+                            end
+
+                            if opened then
+                                task.wait(0.6)
+                                local dr = ReplicatedStorage:FindFirstChild("Modules")
+                                    and ReplicatedStorage.Modules:FindFirstChild("Common")
+                                    and ReplicatedStorage.Modules.Common:FindFirstChild("DialogueServer")
+                                    and ReplicatedStorage.Modules.Common.DialogueServer:FindFirstChild("Remotes")
+                                local respond = dr and dr:FindFirstChild("ResondToDialogue")
+                                if respond then
+                                    respond:FireServer(1) -- "* accept candy *"
+                                end
+                                task.wait(1.5)
+                            else
+                                task.wait(0.5)
+                            end
+
+                            handled = true
+                            break
+                        end
+                    end
+                end
+            end
+
+            if not handled then task.wait(1) end
+        end
+    end
+end)
+
+-- 5. Auto Skip Dialogue
+if DialogueRemotes then
+    local voteSkip = DialogueRemotes:FindFirstChild("VoteSkip")
+    if voteSkip then
+        workspace:GetAttributeChangedSignal("DialogueOpen"):Connect(function()
+            if States.AutoSkipDialogue and workspace:GetAttribute("DialogueOpen") then
+                task.wait(0.5)
+                voteSkip:FireServer()
+            end
+        end)
+    end
+end
