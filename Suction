@@ -1,0 +1,506 @@
+--[[
+    ┌──────────────────────────────────────────────────┐
+    │  SUCTION GLOVE HELPER — STANDALONE               │
+    │  Extracted from Helper Hub                       │
+    │  Features:                                       │
+    │   • TP to the suction obby (fires remote)        │
+    │   • Pin / release the plunger glove to your cam  │
+    │   • Persistent cursor unlock for first-person    │
+    │     sections (the obby locks your mouse)         │
+    │  Keys: Alt = toggle cursor, Q = minimize         │
+    └──────────────────────────────────────────────────┘
+]]
+
+local Players           = game:GetService("Players")
+local LocalPlayer       = Players.LocalPlayer
+local PlayerGui         = LocalPlayer:WaitForChild("PlayerGui")
+local UserInputService  = game:GetService("UserInputService")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ============ CONFIG ============
+local GLOVE_NAME    = "Plunger"       -- internal glove name
+local GUI_NAME      = "SuctionHelper"
+local GLOVE_FOLDER  = "plunger glove" -- workspace folder
+local GLOVE_PART    = "plungerglove"  -- actual part inside the folder
+local REMOTE_PATH   = {"Events", "suction_obby_tp"}
+
+-- ============ THEME ============
+local COLORS = {
+    window      = Color3.fromRGB(24, 24, 28),
+    topBar      = Color3.fromRGB(18, 18, 21),
+    content     = Color3.fromRGB(28, 28, 32),
+    panel       = Color3.fromRGB(36, 36, 41),
+    panelAlt    = Color3.fromRGB(42, 42, 48),
+    button      = Color3.fromRGB(52, 92, 145),
+    buttonHover = Color3.fromRGB(64, 108, 168),
+    sidebar     = Color3.fromRGB(38, 38, 43),
+    sidebarAct  = Color3.fromRGB(55, 95, 150),
+    text        = Color3.fromRGB(245, 245, 248),
+    muted       = Color3.fromRGB(175, 178, 185),
+    border      = Color3.fromRGB(62, 64, 72),
+    danger      = Color3.fromRGB(185, 65, 70),
+    red         = Color3.fromRGB(200, 60, 60),
+    green       = Color3.fromRGB(60, 170, 90),
+    blue        = Color3.fromRGB(60, 120, 200),
+    purple      = Color3.fromRGB(150, 60, 200),
+    warn        = Color3.fromRGB(255, 180, 60),
+    cyan        = Color3.fromRGB(70, 210, 210),
+}
+
+-- ============ HELPERS ============
+local function addCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
+end
+
+local function addStroke(parent, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color        = COLORS.border
+    s.Thickness    = 1
+    s.Transparency = transparency or 0
+    s.Parent       = parent
+    return s
+end
+
+local function ownsGlove(name)
+    local folder = LocalPlayer:FindFirstChild("_unlockedGloves")
+    if not folder then return nil end
+    local bv = folder:FindFirstChild(name)
+    if bv and bv:IsA("BoolValue") then return bv.Value end
+    return nil
+end
+
+-- ============ CURSOR UNLOCKER ============
+-- The suction obby forces first-person and slams the mouse lock on.
+-- We keep re-applying Default every frame while unlocked so it can't re-lock.
+local cursorUnlocked   = false
+local cursorUnlockLoop = nil
+
+local function unlockCursor()
+    if cursorUnlocked then return end
+    cursorUnlocked   = true
+    cursorUnlockLoop = RunService.RenderStepped:Connect(function()
+        UserInputService.MouseBehavior    = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end)
+end
+
+local function lockCursor()
+    if not cursorUnlocked then return end
+    cursorUnlocked = false
+    if cursorUnlockLoop then
+        cursorUnlockLoop:Disconnect()
+        cursorUnlockLoop = nil
+    end
+end
+
+-- Forward-declared so toggle can refresh UI
+local refreshCursorUI
+
+local function toggleCursorUnlock()
+    if cursorUnlocked then lockCursor() else unlockCursor() end
+    if refreshCursorUI then refreshCursorUI() end
+end
+
+-- ============ DESTROY EXISTING ============
+if PlayerGui:FindFirstChild(GUI_NAME) then
+    PlayerGui[GUI_NAME]:Destroy()
+end
+
+-- ============ MAIN GUI ============
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name         = GUI_NAME
+screenGui.ResetOnSpawn = false
+screenGui.Parent       = PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size             = UDim2.new(0, 380, 0, 420)
+mainFrame.Position         = UDim2.new(0.5, -190, 0.5, -210)
+mainFrame.BackgroundColor3 = COLORS.window
+mainFrame.BorderSizePixel  = 0
+mainFrame.Active           = true
+mainFrame.ClipsDescendants = true
+mainFrame.Parent           = screenGui
+addCorner(mainFrame, 11)
+addStroke(mainFrame, 0.15)
+
+-- Top bar
+local topBar = Instance.new("Frame")
+topBar.Size             = UDim2.new(1, 0, 0, 40)
+topBar.BackgroundColor3 = COLORS.topBar
+topBar.BorderSizePixel  = 0
+topBar.Active           = true
+topBar.Parent           = mainFrame
+addCorner(topBar, 11)
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size                   = UDim2.new(1, -130, 1, 0)
+titleLabel.Position               = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text                   = "🪠 Suction Glove Helper"
+titleLabel.TextColor3             = COLORS.text
+titleLabel.TextSize               = 15
+titleLabel.Font                   = Enum.Font.GothamBold
+titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
+titleLabel.ZIndex                 = 3
+titleLabel.Parent                 = topBar
+
+local dragHandle = Instance.new("Frame")
+dragHandle.Size                   = UDim2.new(1, -110, 1, 0)
+dragHandle.BackgroundTransparency = 1
+dragHandle.Active                 = true
+dragHandle.ZIndex                 = 2
+dragHandle.Parent                 = topBar
+
+local cursorBtn = Instance.new("TextButton")
+cursorBtn.Size             = UDim2.new(0, 28, 0, 28)
+cursorBtn.Position         = UDim2.new(1, -96, 0, 6)
+cursorBtn.BackgroundColor3 = COLORS.sidebar
+cursorBtn.Text             = "🖱️"
+cursorBtn.TextColor3       = COLORS.text
+cursorBtn.TextSize         = 13
+cursorBtn.Font             = Enum.Font.GothamBold
+cursorBtn.BorderSizePixel  = 0
+cursorBtn.AutoButtonColor  = false
+cursorBtn.ZIndex           = 4
+cursorBtn.Parent           = topBar
+addCorner(cursorBtn, 7)
+addStroke(cursorBtn, 0.35)
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size             = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position         = UDim2.new(1, -64, 0, 6)
+minimizeBtn.BackgroundColor3 = COLORS.sidebar
+minimizeBtn.Text             = "—"
+minimizeBtn.TextColor3       = COLORS.text
+minimizeBtn.TextSize         = 15
+minimizeBtn.Font             = Enum.Font.GothamBold
+minimizeBtn.BorderSizePixel  = 0
+minimizeBtn.ZIndex           = 4
+minimizeBtn.Parent           = topBar
+addCorner(minimizeBtn, 7)
+addStroke(minimizeBtn, 0.35)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size             = UDim2.new(0, 28, 0, 28)
+closeBtn.Position         = UDim2.new(1, -32, 0, 6)
+closeBtn.BackgroundColor3 = COLORS.danger
+closeBtn.Text             = "×"
+closeBtn.TextColor3       = COLORS.text
+closeBtn.TextSize         = 17
+closeBtn.Font             = Enum.Font.GothamBold
+closeBtn.BorderSizePixel  = 0
+closeBtn.ZIndex           = 4
+closeBtn.Parent           = topBar
+addCorner(closeBtn, 7)
+addStroke(closeBtn, 0.2)
+
+local function refreshCursorBtn()
+    cursorBtn.BackgroundColor3 = cursorUnlocked and COLORS.sidebarAct or COLORS.sidebar
+end
+cursorBtn.MouseButton1Click:Connect(function()
+    toggleCursorUnlock()
+    refreshCursorBtn()
+end)
+
+-- Minimize
+local minimized    = false
+local originalSize = mainFrame.Size
+local body
+
+local function toggleMinimize()
+    minimized = not minimized
+    if minimized then
+        mainFrame.Size   = UDim2.new(0, 240, 0, 40)
+        minimizeBtn.Text = "□"
+    else
+        mainFrame.Size   = originalSize
+        minimizeBtn.Text = "—"
+    end
+    body.Visible = not minimized
+end
+minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+
+-- Dragging
+local dragging = false
+local dragStart, startPosition
+dragHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging      = true
+        dragStart     = input.Position
+        startPosition = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    lockCursor()
+    screenGui:Destroy()
+end)
+
+-- ============ BODY ============
+body = Instance.new("Frame")
+body.Size             = UDim2.new(1, 0, 1, -40)
+body.Position         = UDim2.new(0, 0, 0, 40)
+body.BackgroundColor3 = COLORS.content
+body.BorderSizePixel  = 0
+body.ClipsDescendants = true
+body.Parent           = mainFrame
+
+local innerPanel = Instance.new("Frame")
+innerPanel.Size             = UDim2.new(1, -20, 1, -20)
+innerPanel.Position         = UDim2.new(0, 10, 0, 10)
+innerPanel.BackgroundColor3 = COLORS.panel
+innerPanel.BorderSizePixel  = 0
+innerPanel.Parent           = body
+addCorner(innerPanel, 10)
+addStroke(innerPanel, 0.35)
+
+local titleLbl2 = Instance.new("TextLabel")
+titleLbl2.Size                   = UDim2.new(1, -24, 0, 22)
+titleLbl2.Position               = UDim2.new(0, 14, 0, 10)
+titleLbl2.BackgroundTransparency = 1
+titleLbl2.Text                   = "🪠 Suction Glove Helper"
+titleLbl2.TextColor3             = COLORS.text
+titleLbl2.TextSize               = 14
+titleLbl2.Font                   = Enum.Font.GothamBold
+titleLbl2.TextXAlignment         = Enum.TextXAlignment.Left
+titleLbl2.Parent                 = innerPanel
+
+-- Glove status
+local gloveStatusLbl = Instance.new("TextLabel")
+gloveStatusLbl.Size                   = UDim2.new(1, -28, 0, 16)
+gloveStatusLbl.Position               = UDim2.new(0, 14, 0, 36)
+gloveStatusLbl.BackgroundTransparency = 1
+gloveStatusLbl.TextSize               = 11
+gloveStatusLbl.Font                   = Enum.Font.GothamSemibold
+gloveStatusLbl.TextXAlignment         = Enum.TextXAlignment.Left
+gloveStatusLbl.Parent                 = innerPanel
+do
+    local has = ownsGlove(GLOVE_NAME)
+    if has == true then
+        gloveStatusLbl.Text       = "✓ You have this glove"
+        gloveStatusLbl.TextColor3 = COLORS.green
+    elseif has == false then
+        gloveStatusLbl.Text       = "✗ You do not have this glove"
+        gloveStatusLbl.TextColor3 = COLORS.red
+    else
+        gloveStatusLbl.Text       = "? Glove status unavailable"
+        gloveStatusLbl.TextColor3 = COLORS.muted
+    end
+end
+
+-- Cursor status
+local cursorStatusLbl = Instance.new("TextLabel")
+cursorStatusLbl.Size                   = UDim2.new(1, -28, 0, 16)
+cursorStatusLbl.Position               = UDim2.new(0, 14, 0, 54)
+cursorStatusLbl.BackgroundTransparency = 1
+cursorStatusLbl.Text                   = "🖱️ Cursor: Locked"
+cursorStatusLbl.TextColor3             = COLORS.muted
+cursorStatusLbl.TextSize               = 11
+cursorStatusLbl.Font                   = Enum.Font.GothamSemibold
+cursorStatusLbl.TextXAlignment         = Enum.TextXAlignment.Left
+cursorStatusLbl.Parent                 = innerPanel
+
+local function refreshCursorStatus()
+    if cursorUnlocked then
+        cursorStatusLbl.Text       = "🖱️ Cursor: Unlocked (first-person safe)"
+        cursorStatusLbl.TextColor3 = COLORS.cyan
+    else
+        cursorStatusLbl.Text       = "🖱️ Cursor: Locked (press Alt)"
+        cursorStatusLbl.TextColor3 = COLORS.muted
+    end
+end
+refreshCursorStatus()
+
+refreshCursorUI = function()
+    refreshCursorBtn()
+    refreshCursorStatus()
+end
+
+-- Status label
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size                   = UDim2.new(1, -28, 0, 16)
+statusLbl.Position               = UDim2.new(0, 14, 0, 76)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Text                   = "Status: Ready"
+statusLbl.TextColor3             = COLORS.muted
+statusLbl.TextSize               = 11
+statusLbl.Font                   = Enum.Font.Gotham
+statusLbl.TextXAlignment         = Enum.TextXAlignment.Left
+statusLbl.Parent                 = innerPanel
+
+local function setStatus(t, c)
+    statusLbl.Text       = t
+    statusLbl.TextColor3 = c or COLORS.muted
+end
+
+-- ============ BUTTON BUILDER ============
+local function makeButton(text, y, color, onClick)
+    local b = Instance.new("TextButton")
+    b.Size             = UDim2.new(1, -28, 0, 36)
+    b.Position         = UDim2.new(0, 14, 0, y)
+    b.BackgroundColor3 = color or COLORS.button
+    b.AutoButtonColor  = false
+    b.Text             = text
+    b.TextColor3       = COLORS.text
+    b.TextSize         = 12
+    b.Font             = Enum.Font.GothamSemibold
+    b.BorderSizePixel  = 0
+    b.Parent           = innerPanel
+    addCorner(b, 6)
+    addStroke(b, 0.4)
+    b.MouseEnter:Connect(function()
+        b.BackgroundColor3 = COLORS.buttonHover
+    end)
+    b.MouseLeave:Connect(function()
+        b.BackgroundColor3 = color or COLORS.button
+    end)
+    b.MouseButton1Click:Connect(onClick)
+    return b
+end
+
+-- ============ ACTIONS ============
+local function tpToObby()
+    local cur = ReplicatedStorage
+    for _, n in ipairs(REMOTE_PATH) do
+        cur = cur and cur:FindFirstChild(n)
+        if not cur then
+            setStatus("❌ Remote path missing: " .. table.concat(REMOTE_PATH, "."), COLORS.red)
+            return
+        end
+    end
+    local remote = cur
+    if not remote:IsA("RemoteEvent") and not remote:IsA("RemoteFunction") then
+        setStatus("❌ Remote is wrong type", COLORS.red)
+        return
+    end
+
+    -- Auto-unlock cursor BEFORE firing — this is where the obby
+    -- forces first-person and locks the mouse.
+    unlockCursor()
+    refreshCursorUI()
+
+    pcall(function() remote:FireServer() end)
+    setStatus("✅ Fired suction_obby_tp (cursor unlocked)", COLORS.green)
+end
+
+-- Glove pinning
+local pinned    = false
+local pinConn   = nil
+local bringBtn  -- forward-declared so callback can change its label
+
+local function findPlungerPart()
+    local folder = workspace:FindFirstChild(GLOVE_FOLDER)
+    local part   = folder and folder:FindFirstChild(GLOVE_PART)
+    return part
+end
+
+local function releaseGlove()
+    if pinConn then pinConn:Disconnect(); pinConn = nil end
+    pinned = false
+    if bringBtn then
+        bringBtn.Text             = "Bring Glove To Me"
+        bringBtn.BackgroundColor3 = COLORS.green
+    end
+    setStatus("Released", COLORS.muted)
+end
+
+local function pinGlove()
+    local target = findPlungerPart()
+    if not target then
+        setStatus("❌ " .. GLOVE_PART .. " not found", COLORS.red)
+        return
+    end
+    if not target:IsA("BasePart") then
+        setStatus("❌ Target is not a BasePart", COLORS.red)
+        return
+    end
+
+    local cam = workspace.CurrentCamera
+    pinConn = RunService.RenderStepped:Connect(function()
+        target.CFrame = cam.CFrame * CFrame.new(0, 0, -5)
+    end)
+    pinned = true
+    if bringBtn then
+        bringBtn.Text             = "Release Glove"
+        bringBtn.BackgroundColor3 = COLORS.danger
+    end
+    setStatus("🪠 Glove pinned to camera", COLORS.green)
+end
+
+-- ============ BUTTONS ============
+local y = 100
+
+makeButton("▶ TP to Obby (fires remote)", y, COLORS.button, tpToObby)
+y = y + 44
+
+bringBtn = makeButton("Bring Glove To Me", y, COLORS.green, function()
+    if pinned then releaseGlove() else pinGlove() end
+end)
+y = y + 44
+
+makeButton("🖱️ Toggle Cursor Unlock (Alt)", y, COLORS.sidebar, function()
+    toggleCursorUnlock()
+    refreshCursorUI()
+end)
+y = y + 44
+
+makeButton("🔓 Force Unlock Cursor", y, COLORS.cyan, function()
+    unlockCursor()
+    refreshCursorUI()
+    setStatus("🖱️ Cursor forced unlocked", COLORS.cyan)
+end)
+
+-- ============ GLOBAL KEYBINDS ============
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        toggleCursorUnlock()
+        refreshCursorUI()
+        return
+    end
+    if gameProcessed then return end
+
+    if input.KeyCode == Enum.KeyCode.Q then
+        toggleMinimize()
+    end
+end)
+
+refreshCursorUI()
+
+-- ============ FIRST-PERSON WATCHDOG ============
+-- Suction obby loves to flip you to LockFirstPerson. If unlocked, we re-assert
+-- Default behavior on a slow poll too (belt & suspenders on top of RenderStepped).
+task.spawn(function()
+    while screenGui.Parent do
+        task.wait(1)
+        if cursorUnlocked then
+            local ok, isFirstPerson = pcall(function()
+                return LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson
+            end)
+            if ok and isFirstPerson then
+                refreshCursorStatus()
+            end
+        end
+    end
+end)
+
+print("[Suction Helper] Loaded standalone — cursor unlock included for first-person obby.")
