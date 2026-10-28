@@ -1,456 +1,467 @@
--- Combined Helper: Keypad + Elude Maze + Glove Teleporter
--- Works in ANY game (main or minigame).
+--[[
+    ┌─────────────────────────────────────────────────┐
+    │  ELUDE GLOVE HELPER — STANDALONE                │
+    │  Extracted from Helper Hub                      │
+    │  Features:                                      │
+    │   • TP to Elude Maze place                      │
+    │   • Auto-run maze (teleports through all parts) │
+    │   • TP directly to the Elude glove              │
+    │   • Glove-owned + place-status indicators       │
+    │  Keys: Alt = toggle cursor, Q = minimize        │
+    └─────────────────────────────────────────────────┘
+]]
 
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local UserInputService = game:GetService("UserInputService")
+local Players            = game:GetService("Players")
+local LocalPlayer        = Players.LocalPlayer
+local PlayerGui          = LocalPlayer:WaitForChild("PlayerGui")
+local UserInputService   = game:GetService("UserInputService")
+local RunService         = game:GetService("RunService")
+local TeleportService    = game:GetService("TeleportService")
 
--- Prevent duplicate GUIs
-if playerGui:FindFirstChild("CombinedHelperGUI") then return end
+-- ============ CONFIG ============
+local ELUDE_PLACE_ID = 11828384869
+local GLOVE_NAME     = "Elude"
+local GUI_NAME       = "EludeHelper"
 
--- ============================================================
--- 1. CREATE THE MAIN GUI (Two Panels + Glove row)
--- ============================================================
+-- ============ THEME ============
+local COLORS = {
+    window      = Color3.fromRGB(24, 24, 28),
+    topBar      = Color3.fromRGB(18, 18, 21),
+    content     = Color3.fromRGB(28, 28, 32),
+    panel       = Color3.fromRGB(36, 36, 41),
+    panelAlt    = Color3.fromRGB(42, 42, 48),
+    button      = Color3.fromRGB(52, 92, 145),
+    buttonHover = Color3.fromRGB(64, 108, 168),
+    sidebar     = Color3.fromRGB(38, 38, 43),
+    text        = Color3.fromRGB(245, 245, 248),
+    muted       = Color3.fromRGB(175, 178, 185),
+    border      = Color3.fromRGB(62, 64, 72),
+    danger      = Color3.fromRGB(185, 65, 70),
+    red         = Color3.fromRGB(200, 60, 60),
+    green       = Color3.fromRGB(60, 170, 90),
+    purple      = Color3.fromRGB(150, 60, 200),
+    warn        = Color3.fromRGB(255, 180, 60),
+}
+
+-- ============ HELPERS ============
+local function addCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
+end
+
+local function addStroke(parent, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color        = COLORS.border
+    s.Thickness    = 1
+    s.Transparency = transparency or 0
+    s.Parent       = parent
+    return s
+end
+
+local function ownsGlove(name)
+    local folder = LocalPlayer:FindFirstChild("_unlockedGloves")
+    if not folder then return nil end
+    local bv = folder:FindFirstChild(name)
+    if bv and bv:IsA("BoolValue") then return bv.Value end
+    return nil
+end
+
+local function inPlace(id) return game.PlaceId == id end
+
+local function teleportToPlace(placeId, statusLbl, pendingText)
+    if not placeId or placeId == 0 then
+        if statusLbl then
+            statusLbl.Text       = "❌ Place ID not set"
+            statusLbl.TextColor3 = COLORS.red
+        end
+        return
+    end
+    if statusLbl then
+        statusLbl.Text       = pendingText or "⏳ Teleporting..."
+        statusLbl.TextColor3 = COLORS.warn
+    end
+    pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+end
+
+-- ============ CURSOR UNLOCKER ============
+local cursorUnlocked     = false
+local cursorUnlockLoop   = nil
+
+local function unlockCursor()
+    if cursorUnlocked then return end
+    cursorUnlocked = true
+    cursorUnlockLoop = RunService.RenderStepped:Connect(function()
+        UserInputService.MouseBehavior   = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end)
+end
+
+local function lockCursor()
+    if not cursorUnlocked then return end
+    cursorUnlocked = false
+    if cursorUnlockLoop then
+        cursorUnlockLoop:Disconnect()
+        cursorUnlockLoop = nil
+    end
+end
+
+local function toggleCursorUnlock()
+    if cursorUnlocked then lockCursor() else unlockCursor() end
+end
+
+-- ============ DESTROY EXISTING ============
+if PlayerGui:FindFirstChild(GUI_NAME) then
+    PlayerGui[GUI_NAME]:Destroy()
+end
+
+-- ============ MAIN GUI ============
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CombinedHelperGUI"
-screenGui.Parent = playerGui
-screenGui.ResetOnSpawn = false
+screenGui.Name          = GUI_NAME
+screenGui.ResetOnSpawn  = false
+screenGui.Parent        = PlayerGui
 
--- Main frame (slightly taller to fit glove row)
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 640, 0, 260)
-mainFrame.Position = UDim2.new(0.5, -320, 0.5, -130)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-mainFrame.BackgroundTransparency = 0.15
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+mainFrame.Size                   = UDim2.new(0, 360, 0, 400)
+mainFrame.Position               = UDim2.new(0.5, -180, 0.5, -200)
+mainFrame.BackgroundColor3       = COLORS.window
+mainFrame.BorderSizePixel        = 0
+mainFrame.Active                 = true
+mainFrame.ClipsDescendants       = true
+mainFrame.Parent                 = screenGui
+addCorner(mainFrame, 11)
+addStroke(mainFrame, 0.15)
 
-local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
-mainCorner.Parent = mainFrame
+-- Top bar
+local topBar = Instance.new("Frame")
+topBar.Size             = UDim2.new(1, 0, 0, 40)
+topBar.BackgroundColor3 = COLORS.topBar
+topBar.BorderSizePixel  = 0
+topBar.Active           = true
+topBar.Parent           = mainFrame
+addCorner(topBar, 11)
 
--- Close button
-local closeButton = Instance.new("TextButton")
-closeButton.Size = UDim2.new(0, 25, 0, 25)
-closeButton.Position = UDim2.new(1, -30, 0, 5)
-closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-closeButton.Text = "✕"
-closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeButton.TextScaled = true
-closeButton.Font = Enum.Font.GothamBold
-closeButton.BorderSizePixel = 0
-closeButton.Parent = mainFrame
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 4)
-closeCorner.Parent = closeButton
-closeButton.MouseButton1Click:Connect(function() screenGui:Destroy() end)
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size             = UDim2.new(1, -130, 1, 0)
+titleLabel.Position         = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text             = "🌀 Elude Glove Helper"
+titleLabel.TextColor3       = COLORS.text
+titleLabel.TextSize         = 15
+titleLabel.Font             = Enum.Font.GothamBold
+titleLabel.TextXAlignment   = Enum.TextXAlignment.Left
+titleLabel.ZIndex           = 3
+titleLabel.Parent           = topBar
 
--- ============================================================
--- 1a. LEFT PANEL – KEYPAD HELPER (same as before)
--- ============================================================
-local leftPanel = Instance.new("Frame")
-leftPanel.Size = UDim2.new(0.5, -5, 0.75, 0)  -- 75% height for panels, bottom 25% for glove row
-leftPanel.Position = UDim2.new(0, 0, 0, 0)
-leftPanel.BackgroundTransparency = 1
-leftPanel.Parent = mainFrame
+local dragHandle = Instance.new("Frame")
+dragHandle.Size                 = UDim2.new(1, -110, 1, 0)
+dragHandle.BackgroundTransparency = 1
+dragHandle.Active               = true
+dragHandle.ZIndex               = 2
+dragHandle.Parent               = topBar
 
-local keyTitle = Instance.new("TextLabel")
-keyTitle.Size = UDim2.new(1, -10, 0.25, 0)
-keyTitle.Position = UDim2.new(0, 5, 0, 0)
-keyTitle.BackgroundTransparency = 1
-keyTitle.Text = "🔑 KEYPAD"
-keyTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
-keyTitle.TextScaled = true
-keyTitle.Font = Enum.Font.GothamBold
-keyTitle.TextXAlignment = Enum.TextXAlignment.Left
-keyTitle.Parent = leftPanel
+local cursorBtn = Instance.new("TextButton")
+cursorBtn.Size             = UDim2.new(0, 28, 0, 28)
+cursorBtn.Position         = UDim2.new(1, -96, 0, 6)
+cursorBtn.BackgroundColor3 = COLORS.sidebar
+cursorBtn.Text             = "🖱️"
+cursorBtn.TextColor3       = COLORS.text
+cursorBtn.TextSize         = 13
+cursorBtn.Font             = Enum.Font.GothamBold
+cursorBtn.BorderSizePixel  = 0
+cursorBtn.AutoButtonColor  = false
+cursorBtn.ZIndex           = 4
+cursorBtn.Parent           = topBar
+addCorner(cursorBtn, 7)
+addStroke(cursorBtn, 0.35)
 
-local keyStatus = Instance.new("TextLabel")
-keyStatus.Size = UDim2.new(1, -10, 0.2, 0)
-keyStatus.Position = UDim2.new(0, 5, 0.25, 0)
-keyStatus.BackgroundTransparency = 1
-keyStatus.Text = "Ready"
-keyStatus.TextColor3 = Color3.fromRGB(200, 200, 200)
-keyStatus.TextScaled = true
-keyStatus.Font = Enum.Font.Gotham
-keyStatus.TextXAlignment = Enum.TextXAlignment.Left
-keyStatus.Parent = leftPanel
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size             = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position         = UDim2.new(1, -64, 0, 6)
+minimizeBtn.BackgroundColor3 = COLORS.sidebar
+minimizeBtn.Text             = "—"
+minimizeBtn.TextColor3       = COLORS.text
+minimizeBtn.TextSize         = 15
+minimizeBtn.Font             = Enum.Font.GothamBold
+minimizeBtn.BorderSizePixel  = 0
+minimizeBtn.ZIndex           = 4
+minimizeBtn.Parent           = topBar
+addCorner(minimizeBtn, 7)
+addStroke(minimizeBtn, 0.35)
 
-local keyCode = Instance.new("TextLabel")
-keyCode.Size = UDim2.new(1, -10, 0.2, 0)
-keyCode.Position = UDim2.new(0, 5, 0.45, 0)
-keyCode.BackgroundTransparency = 1
-keyCode.Text = "Code: ???"
-keyCode.TextColor3 = Color3.fromRGB(100, 200, 255)
-keyCode.TextScaled = true
-keyCode.Font = Enum.Font.GothamBold
-keyCode.TextXAlignment = Enum.TextXAlignment.Left
-keyCode.Parent = leftPanel
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size             = UDim2.new(0, 28, 0, 28)
+closeBtn.Position         = UDim2.new(1, -32, 0, 6)
+closeBtn.BackgroundColor3 = COLORS.danger
+closeBtn.Text             = "×"
+closeBtn.TextColor3       = COLORS.text
+closeBtn.TextSize         = 17
+closeBtn.Font             = Enum.Font.GothamBold
+closeBtn.BorderSizePixel  = 0
+closeBtn.ZIndex           = 4
+closeBtn.Parent           = topBar
+addCorner(closeBtn, 7)
+addStroke(closeBtn, 0.2)
 
-local keyInfo = Instance.new("TextLabel")
-keyInfo.Size = UDim2.new(1, -10, 0.2, 0)
-keyInfo.Position = UDim2.new(0, 5, 0.65, 0)
-keyInfo.BackgroundTransparency = 1
-keyInfo.Text = "Players: 0"
-keyInfo.TextColor3 = Color3.fromRGB(150, 255, 150)
-keyInfo.TextScaled = true
-keyInfo.Font = Enum.Font.Gotham
-keyInfo.TextXAlignment = Enum.TextXAlignment.Left
-keyInfo.Parent = leftPanel
-
-local teleportBtn = Instance.new("TextButton")
-teleportBtn.Size = UDim2.new(0, 100, 0, 30)
-teleportBtn.Position = UDim2.new(0.5, -50, 0.85, 0)
-teleportBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 40)
-teleportBtn.Text = "🚀 Teleport"
-teleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-teleportBtn.TextScaled = true
-teleportBtn.Font = Enum.Font.GothamBold
-teleportBtn.BorderSizePixel = 0
-teleportBtn.Parent = leftPanel
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 4)
-btnCorner.Parent = teleportBtn
-
--- ============================================================
--- 1b. RIGHT PANEL – ELUDE MAZE TELEPORTER (includes glove)
--- ============================================================
-local rightPanel = Instance.new("Frame")
-rightPanel.Size = UDim2.new(0.5, -5, 0.75, 0)
-rightPanel.Position = UDim2.new(0.5, 5, 0, 0)
-rightPanel.BackgroundTransparency = 1
-rightPanel.Parent = mainFrame
-
-local mazeTitle = Instance.new("TextLabel")
-mazeTitle.Size = UDim2.new(1, -10, 0.25, 0)
-mazeTitle.Position = UDim2.new(0, 5, 0, 0)
-mazeTitle.BackgroundTransparency = 1
-mazeTitle.Text = "🌀 ELUDE MAZE"
-mazeTitle.TextColor3 = Color3.fromRGB(200, 150, 255)
-mazeTitle.TextScaled = true
-mazeTitle.Font = Enum.Font.GothamBold
-mazeTitle.TextXAlignment = Enum.TextXAlignment.Left
-mazeTitle.Parent = rightPanel
-
-local mazeStatus = Instance.new("TextLabel")
-mazeStatus.Size = UDim2.new(1, -10, 0.2, 0)
-mazeStatus.Position = UDim2.new(0, 5, 0.25, 0)
-mazeStatus.BackgroundTransparency = 1
-mazeStatus.Text = "Status: Idle"
-mazeStatus.TextColor3 = Color3.fromRGB(200, 200, 200)
-mazeStatus.TextScaled = true
-mazeStatus.Font = Enum.Font.Gotham
-mazeStatus.TextXAlignment = Enum.TextXAlignment.Left
-mazeStatus.Parent = rightPanel
-
-local mazeInfo = Instance.new("TextLabel")
-mazeInfo.Size = UDim2.new(1, -10, 0.2, 0)
-mazeInfo.Position = UDim2.new(0, 5, 0.45, 0)
-mazeInfo.BackgroundTransparency = 1
-mazeInfo.Text = "Collectables: 0 found"
-mazeInfo.TextColor3 = Color3.fromRGB(255, 200, 100)
-mazeInfo.TextScaled = true
-mazeInfo.Font = Enum.Font.Gotham
-mazeInfo.TextXAlignment = Enum.TextXAlignment.Left
-mazeInfo.Parent = rightPanel
-
-local mazeProgress = Instance.new("TextLabel")
-mazeProgress.Size = UDim2.new(1, -10, 0.2, 0)
-mazeProgress.Position = UDim2.new(0, 5, 0.65, 0)
-mazeProgress.BackgroundTransparency = 1
-mazeProgress.Text = "Progress: 0/0"
-mazeProgress.TextColor3 = Color3.fromRGB(150, 255, 150)
-mazeProgress.TextScaled = true
-mazeProgress.Font = Enum.Font.Gotham
-mazeProgress.TextXAlignment = Enum.TextXAlignment.Left
-mazeProgress.Parent = rightPanel
-
-local mazeBtn = Instance.new("TextButton")
-mazeBtn.Size = UDim2.new(0, 120, 0, 30)
-mazeBtn.Position = UDim2.new(0.1, 0, 0.85, 0)  -- left side of right panel
-mazeBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 180)
-mazeBtn.Text = "▶ Start Maze"
-mazeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-mazeBtn.TextScaled = true
-mazeBtn.Font = Enum.Font.GothamBold
-mazeBtn.BorderSizePixel = 0
-mazeBtn.Parent = rightPanel
-local mazeBtnCorner = Instance.new("UICorner")
-mazeBtnCorner.CornerRadius = UDim.new(0, 4)
-mazeBtnCorner.Parent = mazeBtn
-
--- ============================================================
--- 1c. GLOVE TELEPORT BUTTON (bottom row, spanning full width)
--- ============================================================
-local gloveRow = Instance.new("Frame")
-gloveRow.Size = UDim2.new(1, -10, 0.2, 0)
-gloveRow.Position = UDim2.new(0, 5, 0.8, 0)
-gloveRow.BackgroundTransparency = 1
-gloveRow.Parent = mainFrame
-
-local gloveLabel = Instance.new("TextLabel")
-gloveLabel.Size = UDim2.new(0.3, 0, 1, 0)
-gloveLabel.Position = UDim2.new(0, 0, 0, 0)
-gloveLabel.BackgroundTransparency = 1
-gloveLabel.Text = "🧤 Glove:"
-gloveLabel.TextColor3 = Color3.fromRGB(255, 180, 180)
-gloveLabel.TextScaled = true
-gloveLabel.Font = Enum.Font.GothamBold
-gloveLabel.TextXAlignment = Enum.TextXAlignment.Right
-gloveLabel.Parent = gloveRow
-
-local gloveStatus = Instance.new("TextLabel")
-gloveStatus.Size = UDim2.new(0.4, 0, 1, 0)
-gloveStatus.Position = UDim2.new(0.3, 5, 0, 0)
-gloveStatus.BackgroundTransparency = 1
-gloveStatus.Text = "Ready"
-gloveStatus.TextColor3 = Color3.fromRGB(200, 200, 200)
-gloveStatus.TextScaled = true
-gloveStatus.Font = Enum.Font.Gotham
-gloveStatus.TextXAlignment = Enum.TextXAlignment.Left
-gloveStatus.Parent = gloveRow
-
-local gloveBtn = Instance.new("TextButton")
-gloveBtn.Size = UDim2.new(0, 100, 0, 30)
-gloveBtn.Position = UDim2.new(0.75, 0, 0, 0)
-gloveBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 180)
-gloveBtn.Text = "🧤 Go Glove"
-gloveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-gloveBtn.TextScaled = true
-gloveBtn.Font = Enum.Font.GothamBold
-gloveBtn.BorderSizePixel = 0
-gloveBtn.Parent = gloveRow
-local gloveBtnCorner = Instance.new("UICorner")
-gloveBtnCorner.CornerRadius = UDim.new(0, 4)
-gloveBtnCorner.Parent = gloveBtn
-
--- ============================================================
--- 2. KEYPAD HELPER LOGIC (unchanged)
--- ============================================================
-local function updateKeyStatus(text, color)
-    keyStatus.Text = text
-    if color then keyStatus.TextColor3 = color end
+local function refreshCursorBtn()
+    cursorBtn.BackgroundColor3 = cursorUnlocked and COLORS.button or COLORS.sidebar
 end
-
-local function updateKeyCode(code)
-    keyCode.Text = "Code: " .. code
-end
-
-local function updateKeyInfo(playerCount)
-    keyInfo.Text = "Players: " .. playerCount
-end
-
-local function teleportToBackpiece()
-    local keypad = Workspace:FindFirstChild("Keypad")
-    if not keypad then
-        updateKeyStatus("Keypad not found! ❌", Color3.fromRGB(255, 50, 50))
-        teleportBtn.Text = "❌ No Keypad"
-        teleportBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        return false
-    end
-    local backpiece = keypad:FindFirstChild("Backpiece")
-    if not backpiece or not backpiece:IsA("BasePart") then
-        updateKeyStatus("Backpiece missing! ❌", Color3.fromRGB(255, 50, 50))
-        teleportBtn.Text = "❌ No Backpiece"
-        teleportBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        return false
-    end
-    local character = player.Character
-    if not character then return false end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return false end
-    root.CFrame = backpiece.CFrame + Vector3.new(0, 3, 0)
-    updateKeyStatus("Teleported! ✅", Color3.fromRGB(50, 255, 50))
-    teleportBtn.Text = "✔ Done"
-    teleportBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 40)
-    return true
-end
-
-local function refreshKeypad()
-    local count = Players.NumPlayers
-    local codeNumber = (25 * count) + 1093
-    updateKeyCode(tostring(codeNumber))
-    updateKeyInfo(count)
-end
-
-teleportBtn.MouseButton1Click:Connect(function()
-    refreshKeypad()
-    teleportToBackpiece()
+cursorBtn.MouseButton1Click:Connect(function()
+    toggleCursorUnlock()
+    refreshCursorBtn()
 end)
 
-Players.PlayerAdded:Connect(refreshKeypad)
-Players.PlayerRemoving:Connect(refreshKeypad)
-refreshKeypad()
-updateKeyStatus("Ready - press Teleport", Color3.fromRGB(200, 200, 200))
-
--- ============================================================
--- 3. ELUDE MAZE + GLOVE LOGIC
--- ============================================================
-local collectableFolder = nil
-local collectableParts = {}
-local isMazeRunning = false
-
-local function updateMazeStatus(text, color)
-    mazeStatus.Text = text
-    if color then mazeStatus.TextColor3 = color end
-end
-
-local function updateMazeInfo(found, total)
-    mazeInfo.Text = "Collectables: " .. found .. " found"
-    mazeProgress.Text = "Progress: " .. found .. "/" .. total
-end
-
-local function scanCollectables()
-    collectableFolder = Workspace:FindFirstChild("Collectable")
-    if not collectableFolder then
-        updateMazeStatus("Collectable folder not found!", Color3.fromRGB(255, 50, 50))
-        mazeBtn.Text = "❌ Not Found"
-        mazeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        return false
+-- Minimize
+local minimized     = false
+local originalSize  = mainFrame.Size
+local function toggleMinimize()
+    minimized = not minimized
+    if minimized then
+        mainFrame.Size = UDim2.new(0, 240, 0, 40)
+        minimizeBtn.Text = "□"
+    else
+        mainFrame.Size = originalSize
+        minimizeBtn.Text = "—"
     end
+    body.Visible = not minimized
+end
+minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+
+-- Dragging
+local dragging = false
+local dragStart, startPosition
+dragHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging     = true
+        dragStart    = input.Position
+        startPosition = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputType == Enum.UserInputType.MouseButton1 and
+               input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    lockCursor()
+    screenGui:Destroy()
+end)
+
+-- ============ BODY ============
+local body = Instance.new("Frame")
+body.Size                = UDim2.new(1, 0, 1, -40)
+body.Position            = UDim2.new(0, 0, 0, 40)
+body.BackgroundColor3    = COLORS.content
+body.BorderSizePixel     = 0
+body.ClipsDescendants    = true
+body.Parent              = mainFrame
+
+local innerPanel = Instance.new("Frame")
+innerPanel.Size             = UDim2.new(1, -20, 1, -20)
+innerPanel.Position         = UDim2.new(0, 10, 0, 10)
+innerPanel.BackgroundColor3 = COLORS.panel
+innerPanel.BorderSizePixel  = 0
+innerPanel.Parent           = body
+addCorner(innerPanel, 10)
+addStroke(innerPanel, 0.35)
+
+local titleLbl2 = Instance.new("TextLabel")
+titleLbl2.Size              = UDim2.new(1, -24, 0, 22)
+titleLbl2.Position          = UDim2.new(0, 14, 0, 10)
+titleLbl2.BackgroundTransparency = 1
+titleLbl2.Text              = "🌀 Elude Maze Helper"
+titleLbl2.TextColor3        = COLORS.text
+titleLbl2.TextSize          = 14
+titleLbl2.Font              = Enum.Font.GothamBold
+titleLbl2.TextXAlignment    = Enum.TextXAlignment.Left
+titleLbl2.Parent            = innerPanel
+
+-- Glove status
+local gloveStatusLbl = Instance.new("TextLabel")
+gloveStatusLbl.Size         = UDim2.new(1, -28, 0, 16)
+gloveStatusLbl.Position     = UDim2.new(0, 14, 0, 36)
+gloveStatusLbl.BackgroundTransparency = 1
+gloveStatusLbl.TextSize     = 11
+gloveStatusLbl.Font         = Enum.Font.GothamSemibold
+gloveStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
+gloveStatusLbl.Parent       = innerPanel
+do
+    local has = ownsGlove(GLOVE_NAME)
+    if has == true then
+        gloveStatusLbl.Text       = "✓ You have this glove"
+        gloveStatusLbl.TextColor3 = COLORS.green
+    elseif has == false then
+        gloveStatusLbl.Text       = "✗ You do not have this glove"
+        gloveStatusLbl.TextColor3 = COLORS.red
+    else
+        gloveStatusLbl.Text       = "? Glove status unavailable"
+        gloveStatusLbl.TextColor3 = COLORS.muted
+    end
+end
+
+-- Place status
+local placeWarnLbl = Instance.new("TextLabel")
+placeWarnLbl.Size         = UDim2.new(1, -28, 0, 16)
+placeWarnLbl.Position     = UDim2.new(0, 14, 0, 54)
+placeWarnLbl.BackgroundTransparency = 1
+placeWarnLbl.TextSize     = 11
+placeWarnLbl.Font         = Enum.Font.GothamBold
+placeWarnLbl.TextXAlignment = Enum.TextXAlignment.Left
+placeWarnLbl.Parent       = innerPanel
+do
+    if inPlace(ELUDE_PLACE_ID) then
+        placeWarnLbl.Text       = "✓ At required place"
+        placeWarnLbl.TextColor3 = COLORS.green
+    else
+        placeWarnLbl.Text       = "⚠ YOU MUST TP TO PLACE TO GET BADGE"
+        placeWarnLbl.TextColor3 = COLORS.warn
+    end
+end
+
+-- Status label
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size              = UDim2.new(1, -28, 0, 16)
+statusLbl.Position          = UDim2.new(0, 14, 0, 76)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Text              = "Status: Idle"
+statusLbl.TextColor3        = COLORS.muted
+statusLbl.TextSize          = 11
+statusLbl.Font              = Enum.Font.Gotham
+statusLbl.TextXAlignment    = Enum.TextXAlignment.Left
+statusLbl.Parent            = innerPanel
+
+local function setStatus(t, c)
+    statusLbl.Text       = t
+    statusLbl.TextColor3 = c or COLORS.muted
+end
+
+-- ============ BUTTON BUILDER ============
+local function makeButton(text, y, color, onClick)
+    local b = Instance.new("TextButton")
+    b.Size             = UDim2.new(1, -28, 0, 36)
+    b.Position         = UDim2.new(0, 14, 0, y)
+    b.BackgroundColor3 = color or COLORS.button
+    b.AutoButtonColor  = false
+    b.Text             = text
+    b.TextColor3       = COLORS.text
+    b.TextSize         = 12
+    b.Font             = Enum.Font.GothamSemibold
+    b.BorderSizePixel  = 0
+    b.Parent           = innerPanel
+    addCorner(b, 6)
+    addStroke(b, 0.4)
+    b.MouseEnter:Connect(function()
+        b.BackgroundColor3 = COLORS.buttonHover
+    end)
+    b.MouseLeave:Connect(function()
+        b.BackgroundColor3 = color or COLORS.button
+    end)
+    b.MouseButton1Click:Connect(onClick)
+    return b
+end
+
+-- ============ ACTIONS ============
+local busy = false
+
+local function startMaze()
+    if busy then setStatus("Already running...", COLORS.warn); return end
+    if not inPlace(ELUDE_PLACE_ID) then
+        setStatus("⚠ YOU MUST TP TO PLACE TO GET BADGE", COLORS.warn)
+        return
+    end
+
+    local cf = workspace:FindFirstChild("Collectable")
+    if not cf then setStatus("❌ Collectable folder missing", COLORS.red); return end
+
     local parts = {}
-    for _, child in ipairs(collectableFolder:GetChildren()) do
-        if child:IsA("BasePart") then
-            table.insert(parts, child)
+    for _, c in ipairs(cf:GetChildren()) do
+        if c:IsA("BasePart") then table.insert(parts, c) end
+    end
+
+    if #parts == 0 then setStatus("❌ No collectable parts found", COLORS.red); return end
+
+    busy = true
+    setStatus("Starting maze...", COLORS.green)
+
+    task.spawn(function()
+        for i, p in ipairs(parts) do
+            setStatus(("Part %d / %d"):format(i, #parts), COLORS.purple)
+            local char = LocalPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.CFrame = p.CFrame + Vector3.new(0, 2, 0) end
+            task.wait(1)
+        end
+
+        local ruins   = workspace:FindFirstChild("ruins")
+        local elude   = ruins and ruins:FindFirstChild("Elude")
+        local glove   = elude and elude:FindFirstChild("Glove")
+        if glove and glove:IsA("BasePart") then
+            local char = LocalPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.CFrame = glove.CFrame + Vector3.new(0, 2, 0) end
+            setStatus("✅ Done!", COLORS.green)
+        else
+            setStatus("⚠ Maze done — glove part missing", COLORS.warn)
+        end
+        busy = false
+    end)
+end
+
+local function tpToGlove()
+    local ruins = workspace:FindFirstChild("ruins")
+    local elude = ruins and ruins:FindFirstChild("Elude")
+    local gp    = elude and elude:FindFirstChild("Glove")
+    if gp and gp:IsA("BasePart") then
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = gp.CFrame + Vector3.new(0, 2, 0)
+            setStatus("✅ Teleported to Glove", COLORS.green)
+            return
         end
     end
-    collectableParts = parts
-    local total = #parts
-    updateMazeInfo(0, total)
-    if total == 0 then
-        updateMazeStatus("No parts found in Collectable!", Color3.fromRGB(255, 200, 0))
-        mazeBtn.Text = "⚠️ No Parts"
-        mazeBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 0)
-        return false
-    end
-    updateMazeStatus("Ready – press Start or Right Ctrl", Color3.fromRGB(50, 255, 50))
-    mazeBtn.Text = "▶ Start Maze"
-    mazeBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 180)
-    return true
+    setStatus("❌ Glove not found", COLORS.red)
 end
 
-local function teleportToPart(part)
-    local character = player.Character
-    if not character then return false end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return false end
-    root.CFrame = part.CFrame + Vector3.new(0, 2, 0)
-    return true
-end
+-- ============ BUTTONS ============
+local y = 100
+makeButton("🌐 TP to Elude Maze Place", y, COLORS.purple, function()
+    teleportToPlace(ELUDE_PLACE_ID, statusLbl, "⏳ Teleporting to Elude Maze...")
+end)
 
--- === GLOVE TELEPORT ===
-local function teleportToGlove()
-    local ruins = Workspace:FindFirstChild("ruins")
-    if not ruins then
-        gloveStatus.Text = "ruins not found"
-        gloveStatus.TextColor3 = Color3.fromRGB(255, 50, 50)
-        gloveBtn.Text = "❌ No ruins"
-        gloveBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        return false
-    end
-    local elude = ruins:FindFirstChild("Elude")
-    if not elude then
-        gloveStatus.Text = "Elude not found in ruins"
-        gloveStatus.TextColor3 = Color3.fromRGB(255, 50, 50)
-        gloveBtn.Text = "❌ No Elude"
-        gloveBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        return false
-    end
-    local glovePart = elude:FindFirstChild("Glove")
-    if not glovePart or not glovePart:IsA("BasePart") then
-        gloveStatus.Text = "Glove part not found"
-        gloveStatus.TextColor3 = Color3.fromRGB(255, 50, 50)
-        gloveBtn.Text = "❌ No Glove"
-        gloveBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        return false
-    end
-    local character = player.Character
-    if not character then return false end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return false end
-    root.CFrame = glovePart.CFrame + Vector3.new(0, 2, 0)
-    gloveStatus.Text = "Teleported to Glove! ✅"
-    gloveStatus.TextColor3 = Color3.fromRGB(50, 255, 50)
-    gloveBtn.Text = "✔ Done"
-    gloveBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 40)
-    return true
-end
+y = y + 44
+makeButton("▶ Start Maze", y, COLORS.button, startMaze)
 
--- Maze run (now includes glove at the end)
-local function runMaze()
-    if isMazeRunning then return end
-    isMazeRunning = true
-    mazeBtn.Text = "⏳ Running..."
-    mazeBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 0)
-    updateMazeStatus("Starting...", Color3.fromRGB(255, 200, 0))
+y = y + 44
+makeButton("🧤 Teleport to Glove", y, COLORS.button, tpToGlove)
 
-    scanCollectables()
-    local total = #collectableParts
-    if total == 0 then
-        updateMazeStatus("No parts to visit!", Color3.fromRGB(255, 50, 50))
-        isMazeRunning = false
-        mazeBtn.Text = "▶ Start Maze"
-        mazeBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 180)
-        return
-    end
-
-    -- Visit each collectable part
-    for i, part in ipairs(collectableParts) do
-        if not part or not part:IsA("BasePart") then break end
-        updateMazeStatus("Teleporting to " .. part.Name .. " (" .. i .. "/" .. total .. ")", Color3.fromRGB(255, 200, 0))
-        teleportToPart(part)
-        updateMazeInfo(i, total)
-        task.wait(1)
-    end
-
-    -- FINAL: teleport to Glove
-    updateMazeStatus("Teleporting to Glove (final)...", Color3.fromRGB(255, 200, 100))
-    local success = teleportToGlove()
-    if success then
-        updateMazeStatus("All done! (Glove reached) ✅", Color3.fromRGB(50, 255, 50))
-        mazeBtn.Text = "✔ Done"
-        mazeBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 40)
-    else
-        updateMazeStatus("Glove not found – maze partial", Color3.fromRGB(255, 200, 0))
-        mazeBtn.Text = "⚠️ No Glove"
-        mazeBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 0)
-    end
-
-    isMazeRunning = false
-end
-
--- Start maze function (called by button or keybind)
-local function startMaze()
-    if isMazeRunning then
-        updateMazeStatus("Already running!", Color3.fromRGB(255, 200, 0))
-        return
-    end
-    scanCollectables()
-    if #collectableParts > 0 then
-        task.spawn(runMaze)
-    else
-        updateMazeStatus("No parts – scan again", Color3.fromRGB(255, 200, 0))
-    end
-end
-
--- Maze button click
-mazeBtn.MouseButton1Click:Connect(startMaze)
-
--- Glove button click
-gloveBtn.MouseButton1Click:Connect(teleportToGlove)
-
--- Keybind: Right Control starts maze
+-- ============ GLOBAL KEYBINDS ============
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        toggleCursorUnlock()
+        refreshCursorBtn()
+        return
+    end
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.RightControl then
-        startMaze()
+
+    if input.KeyCode == Enum.KeyCode.Q then
+        toggleMinimize()
     end
 end)
 
--- Initial scans
-scanCollectables()
--- Check glove status on load
-task.wait(0.5)
-teleportToGlove()  -- just to update status (doesn't teleport, just checks)
+refreshCursorBtn()
+print("[Elude Helper] Loaded standalone.")
