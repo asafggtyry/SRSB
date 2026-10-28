@@ -1,3 +1,12 @@
+--[[
+    ╔═══════════════════════════════════════════════╗
+    ║         REVANT GLOVE FARMER v3                ║
+    ║             Made by DerpBot                   ║
+    ╚═══════════════════════════════════════════════╝
+--]]
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
@@ -7,15 +16,16 @@ local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 
 -- ==========================================
--- ⚙️ CONFIGURATION & STATES
+-- ⚙️ STATES & CONSTANTS
 -- ==========================================
 local States = {
+    Auto = false,
+    AutoFarm = false,
     AutoSlap = false,
     DefendCornifier = false,
-    AutoFarm = false,
-    Noclip = true,
+    Noclip = false,
     Fly = false,
-    AutoSkipDialogue = true,
+    AutoSkipDialogue = false,
     SpeedHack = false,
     Panic = false,
     WalkSpeed = 60,
@@ -24,195 +34,444 @@ local States = {
     SlapRange = 50
 }
 
--- Panic helper storage (kept outside States so it isn't overwritten by GUI)
+local ROUND_CANDY = { 2000, 3000, 4999 }
+local MAIN_PLACE_IDS = { 6403373529, 13497000683 }
+local OBTAINMENT_PLACE_IDS = { 82340649038345, 106260546437816 }
+
 local PanicCharacter = nil
 local PanicCFrame = nil
+local lastVoteTime = 0
+local lastDialogueFire = 0
+local lastTeleportAttempt = 0
+local lastTalkAttempt = 0
+local scriptStartTime = tick()
+local currentPhase = "Idle"
 
-local DialogueRemotes = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Common") and ReplicatedStorage.Modules.Common:FindFirstChild("DialogueServer") and ReplicatedStorage.Modules.Common.DialogueServer:FindFirstChild("Remotes")
+-- Completion tracking
+local everInObtainment = false
+local reachedEndSequence = false
+local gameCompleted = false
+
+local function notify(cfg)
+    pcall(function() Rayfield:Notify(cfg) end)
+    pcall(function() window:Notify(cfg) end)
+end
 
 -- ==========================================
--- 🖥️ GUI CREATION
+-- 📊 FPS COUNTER
 -- ==========================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CheatMenu"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 260, 0, 500)
-MainFrame.Position = UDim2.new(0.5, -130, 0.5, -250)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = MainFrame
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-Title.Text = "Ultimate Cheat Menu"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 16
-Title.Parent = MainFrame
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
-TitleCorner.Parent = Title
-
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 5)
-UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Parent = MainFrame
-
-local Padding = Instance.new("UIPadding")
-Padding.PaddingTop = UDim.new(0, 45)
-Padding.Parent = MainFrame
-
-local function CreateButton(text, stateKey, isAction)
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(0.9, 0, 0, 32)
-    Btn.BackgroundColor3 = if stateKey and States[stateKey] then Color3.fromRGB(0, 170, 0) else Color3.fromRGB(60, 60, 60)
-    Btn.Text = text .. (if not isAction then ": " .. (if States[stateKey] then "ON" else "OFF") else "")
-    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Btn.Font = Enum.Font.SourceSansBold
-    Btn.TextSize = 14
-    Btn.Parent = MainFrame
-
-    local BtnCorner = Instance.new("UICorner")
-    BtnCorner.CornerRadius = UDim.new(0, 6)
-    BtnCorner.Parent = Btn
-
-    Btn.MouseButton1Click:Connect(function()
-        if isAction then
-            if stateKey == "TP_Cornifier" then
-                local dropZone = workspace:FindFirstChild("DropZone")
-                if dropZone and dropZone:FindFirstChild("NPC") then
-                    local model = dropZone.NPC:FindFirstChild("NPC") or dropZone.NPC
-                    if model and model.PrimaryPart then
-                        LocalPlayer.Character.HumanoidRootPart.CFrame = model.PrimaryPart.CFrame * CFrame.new(0, 5, 5)
-                    end
-                end
-            elseif stateKey == "ForceRespawn" then
-                Btn.Text = "Respawning..."
-                local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-                if Remotes and Remotes:FindFirstChild("RequestRetry") then
-                    Remotes.RequestRetry:FireServer()
-                end
-                task.wait(1)
-                Btn.Text = "Force Respawn (Unstick)"
-            elseif stateKey == "Rejoin" then
-                Btn.Text = "Rejoining Public..."
-                local TeleportOptions = Instance.new("TeleportOptions")
-                TeleportOptions.ShouldReserveServer = false
-                TeleportService:TeleportAsync(game.PlaceId, {LocalPlayer}, TeleportOptions)
-            end
-        else
-            States[stateKey] = not States[stateKey]
-            Btn.BackgroundColor3 = if States[stateKey] then Color3.fromRGB(0, 170, 0) else Color3.fromRGB(60, 60, 60)
-            Btn.Text = text .. ": " .. (if States[stateKey] then "ON" else "OFF")
+local currentFPS = 0
+do
+    local frames = 0
+    local lastCheck = tick()
+    RunService.RenderStepped:Connect(function()
+        frames += 1
+        local now = tick()
+        if now - lastCheck >= 1 then
+            currentFPS = math.floor(frames / (now - lastCheck) + 0.5)
+            frames = 0
+            lastCheck = now
         end
     end)
 end
 
-local function CreateSlider(text, stateKey, minVal, maxVal)
-    local SliderFrame = Instance.new("Frame")
-    SliderFrame.Size = UDim2.new(0.9, 0, 0, 32)
-    SliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    SliderFrame.Parent = MainFrame
+-- ==========================================
+-- 🔧 HELPERS
+-- ==========================================
+local function getBagSize()
+    local pc = #Players:GetPlayers()
+    if pc == 1 then return 2000
+    elseif pc == 2 then return 1500
+    elseif pc == 3 then return 1000
+    else return 600 end
+end
 
-    local SliderCorner = Instance.new("UICorner")
-    SliderCorner.CornerRadius = UDim.new(0, 6)
-    SliderCorner.Parent = SliderFrame
+local function getDialogueRemotes()
+    local modules = ReplicatedStorage:FindFirstChild("Modules")
+    local common = modules and modules:FindFirstChild("Common")
+    local ds = common and common:FindFirstChild("DialogueServer")
+    return ds and ds:FindFirstChild("Remotes")
+end
 
-    local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(1, 0, 0.5, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text .. ": " .. States[stateKey] .. " studs"
-    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Label.Font = Enum.Font.SourceSansBold
-    Label.TextSize = 12
-    Label.Parent = SliderFrame
-
-    local BarBg = Instance.new("Frame")
-    BarBg.Size = UDim2.new(0.9, 0, 0, 6)
-    BarBg.Position = UDim2.new(0.05, 0, 0.7, 0)
-    BarBg.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    BarBg.Parent = SliderFrame
-
-    local BarCorner = Instance.new("UICorner")
-    BarCorner.CornerRadius = UDim.new(0, 4)
-    BarCorner.Parent = BarBg
-
-    local Fill = Instance.new("Frame")
-    Fill.Size = UDim2.new((States[stateKey] - minVal) / (maxVal - minVal), 0, 1, 0)
-    Fill.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
-    Fill.Parent = BarBg
-
-    local FillCorner = Instance.new("UICorner")
-    FillCorner.CornerRadius = UDim.new(0, 4)
-    FillCorner.Parent = Fill
-
-    local dragging = false
-
-    local function updateSlider(input)
-        local mouseX = input.Position.X
-        local barAbsPos = BarBg.AbsolutePosition.X
-        local barAbsSize = BarBg.AbsoluteSize.X
-        local percentage = math.clamp((mouseX - barAbsPos) / barAbsSize, 0, 1)
-
-        local value = math.floor(minVal + (maxVal - minVal) * percentage)
-        States[stateKey] = value
-        Fill.Size = UDim2.new(percentage, 0, 1, 0)
-        Label.Text = text .. ": " .. value .. " studs"
+local function triggerPrompt(prompt)
+    if not prompt then return false end
+    if typeof(fireproximityprompt) == "function" then
+        if pcall(fireproximityprompt, prompt) then return true end
     end
-
-    BarBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            updateSlider(input)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            updateSlider(input)
-        end
+    return pcall(function()
+        prompt:InputHoldBegin()
+        task.wait((prompt.HoldDuration or 0) + 0.2)
+        prompt:InputHoldEnd()
     end)
 end
 
--- Toggles
-CreateButton("Auto Slap (Minions Only)", "AutoSlap", false)
-CreateSlider("Slap Range", "SlapRange", 0, 250)
-CreateButton("Defend Cornifier", "DefendCornifier", false)
-CreateButton("Auto Farm Houses", "AutoFarm", false)
-CreateButton("Auto Skip Dialogue", "AutoSkipDialogue", false)
-CreateButton("Noclip", "Noclip", false)
-CreateButton("Fly", "Fly", false)
-CreateButton("Speed Hack", "SpeedHack", false)
-CreateButton("Panic (Void Safe)", "Panic", false)
+local function getCornifier()
+    local dropZone = workspace:FindFirstChild("DropZone")
+    if not dropZone then return nil, nil end
+    local npcFolder = dropZone:FindFirstChild("NPC")
+    if not npcFolder then return nil, nil end
+    local npcModel = npcFolder:FindFirstChild("NPC") or npcFolder
+    local hrp = npcModel:FindFirstChild("HumanoidRootPart") or npcModel.PrimaryPart
+    return npcModel, hrp
+end
 
--- Actions
-CreateButton("Teleport to Count Cornifier", "TP_Cornifier", true)
-CreateButton("Force Respawn (Unstick)", "ForceRespawn", true)
-CreateButton("Rejoin NEW Public Server", "Rejoin", true)
+local function equipLantern(char)
+    if not char then return nil end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool and tool.Name == "Lantern" then return tool end
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if backpack then
+        local lantern = backpack:FindFirstChild("Lantern")
+        if lantern then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                pcall(function() hum:EquipTool(lantern) end)
+                task.wait(0.2)
+                return char:FindFirstChildOfClass("Tool")
+            end
+        end
+    end
+    return nil
+end
+
+local function slapOnce(char, targetPart)
+    local tool = equipLantern(char)
+    if not tool then return false end
+    local glove = tool:FindFirstChild("Glove")
+    if glove and glove:IsA("BasePart") then
+        glove.Size = Vector3.new(25, 25, 25)
+        glove.Transparency = 1
+        glove.CanCollide = false
+    end
+    tool:Activate()
+    local remote = tool:FindFirstChild("Network")
+    if remote then
+        remote:FireServer("Hit", targetPart)
+        return true
+    end
+    return false
+end
+
+local function isInMainPlace()
+    for _, id in ipairs(MAIN_PLACE_IDS) do
+        if game.PlaceId == id then return true end
+    end
+    return false
+end
+
+local function isInObtainmentPlace()
+    for _, id in ipairs(OBTAINMENT_PLACE_IDS) do
+        if game.PlaceId == id then return true end
+    end
+    return false
+end
+
+local function teleportToObtainment()
+    local target = (game.PlaceId == 13497000683) and 106260546437816 or 82340649038345
+    pcall(function()
+        TeleportService:TeleportAsync(target, { LocalPlayer })
+    end)
+end
 
 -- ==========================================
--- 🧠 MAIN LOOPS
+-- 📊 STATS OVERLAY
 -- ==========================================
+local StatsGui = Instance.new("ScreenGui")
+StatsGui.Name = "RevantStats"
+StatsGui.ResetOnSpawn = false
+StatsGui.IgnoreGuiInset = true
+StatsGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- 1. Fast Loop (Noclip / Fly / Panic)
+local StatsFrame = Instance.new("Frame")
+StatsFrame.Size = UDim2.new(0, 300, 0, 158)
+StatsFrame.Position = UDim2.new(0, 10, 0, 10)
+StatsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+StatsFrame.BackgroundTransparency = 0.15
+StatsFrame.BorderSizePixel = 0
+StatsFrame.Parent = StatsGui
+
+local StatsCorner = Instance.new("UICorner")
+StatsCorner.CornerRadius = UDim.new(0, 8)
+StatsCorner.Parent = StatsFrame
+
+local StatsStroke = Instance.new("UIStroke")
+StatsStroke.Color = Color3.fromRGB(255, 90, 90)
+StatsStroke.Thickness = 1
+StatsStroke.Transparency = 0.4
+StatsStroke.Parent = StatsFrame
+
+local StatsList = Instance.new("UIListLayout")
+StatsList.Padding = UDim.new(0, 2)
+StatsList.SortOrder = Enum.SortOrder.LayoutOrder
+StatsList.Parent = StatsFrame
+
+local StatsPad = Instance.new("UIPadding")
+StatsPad.PaddingTop = UDim.new(0, 8)
+StatsPad.PaddingLeft = UDim.new(0, 12)
+StatsPad.PaddingRight = UDim.new(0, 8)
+StatsPad.PaddingBottom = UDim.new(0, 8)
+StatsPad.Parent = StatsFrame
+
+local StatsHeader = Instance.new("TextLabel")
+StatsHeader.Size = UDim2.new(1, 0, 0, 20)
+StatsHeader.BackgroundTransparency = 1
+StatsHeader.TextXAlignment = Enum.TextXAlignment.Left
+StatsHeader.TextColor3 = Color3.fromRGB(255, 120, 120)
+StatsHeader.Font = Enum.Font.GothamBold
+StatsHeader.TextSize = 14
+StatsHeader.Text = "REVANT GLOVE FARMER"
+StatsHeader.LayoutOrder = 0
+StatsHeader.Parent = StatsFrame
+
+local StatsAuthor = Instance.new("TextLabel")
+StatsAuthor.Size = UDim2.new(1, 0, 0, 14)
+StatsAuthor.BackgroundTransparency = 1
+StatsAuthor.TextXAlignment = Enum.TextXAlignment.Left
+StatsAuthor.TextColor3 = Color3.fromRGB(180, 180, 180)
+StatsAuthor.Font = Enum.Font.Gotham
+StatsAuthor.TextSize = 11
+StatsAuthor.Text = "made by DerpBot"
+StatsAuthor.LayoutOrder = 1
+StatsAuthor.Parent = StatsFrame
+
+local statLines = {}
+local function makeStat(name, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 15)
+    l.BackgroundTransparency = 1
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextColor3 = Color3.fromRGB(230, 230, 230)
+    l.Font = Enum.Font.Code
+    l.TextSize = 13
+    l.Text = name .. ": ..."
+    l.LayoutOrder = order
+    l.Parent = StatsFrame
+    statLines[name] = l
+end
+
+makeStat("Candy", 2)
+makeStat("Bag", 3)
+makeStat("Wave", 4)
+makeStat("Phase", 5)
+makeStat("FPS", 6)
+makeStat("Time", 7)
+makeStat("Players", 8)
+
+task.spawn(function()
+    while task.wait(0.2) do
+        local char = LocalPlayer.Character
+        local round = workspace:GetAttribute("Round") or 1
+        local deposited = workspace:GetAttribute("DepositedCandy") or 0
+        local myCandy = (char and char:GetAttribute("CollectedCandy")) or 0
+        local quota = ROUND_CANDY[round] or 4999
+        local bagSize = getBagSize()
+
+        local waveDisplay
+        if workspace:GetAttribute("FinalEating") == true then
+            waveDisplay = "FINAL"
+        elseif workspace:GetAttribute("FinalStarted") == true then
+            waveDisplay = "3/3 → FINAL"
+        elseif workspace:GetAttribute("WaveStarted") == true then
+            waveDisplay = round .. "/3 (Defending)"
+        else
+            waveDisplay = round .. "/3"
+        end
+
+        local elapsed = tick() - scriptStartTime
+        local h = math.floor(elapsed / 3600)
+        local m = math.floor((elapsed % 3600) / 60)
+        local s = math.floor(elapsed % 60)
+
+        statLines["Candy"].Text   = string.format("Candy Collected:   %d / %d", deposited, quota)
+        statLines["Bag"].Text     = string.format("Bag:               %d / %d", myCandy, bagSize)
+        statLines["Wave"].Text    = string.format("Wave:              %s", waveDisplay)
+        statLines["Phase"].Text   = string.format("Phase:             %s", currentPhase)
+        statLines["FPS"].Text     = string.format("FPS:               %d", currentFPS)
+        statLines["Time"].Text    = string.format("Time Running:      %02d:%02d:%02d", h, m, s)
+        statLines["Players"].Text = string.format("Players in Server: %d", #Players:GetPlayers())
+    end
+end)
+
+-- ==========================================
+-- 🖥️ RAYFIELD WINDOW
+-- ==========================================
+local window = Rayfield:CreateWindow({
+    name = "Revant Glove Farmer",
+    subtitle = "Made by DerpBot",
+    sidebarLayout = true,
+})
+
+local homeTab = window:CreateTab({ name = "Home", icon = 0 })
+local farmTab = window:CreateTab({ name = "Farm", icon = 0 })
+local moveTab = window:CreateTab({ name = "Movement", icon = 0 })
+local actTab  = window:CreateTab({ name = "Actions", icon = 0 })
+
+local autoFarmToggle, autoSkipToggle, noclipToggle, speedToggle, autoToggle
+
+homeTab:CreateSection("Master Control")
+autoToggle = homeTab:CreateToggle({
+    name = "AUTO — Do Everything (Full Auto)",
+    currentValue = false,
+    flag = "Auto",
+    callback = function(value)
+        States.Auto = value
+        States.AutoFarm = value
+        States.AutoSkipDialogue = value
+        States.Noclip = value
+        States.SpeedHack = value
+        pcall(function() if autoFarmToggle then autoFarmToggle:Set(value) end end)
+        pcall(function() if autoSkipToggle then autoSkipToggle:Set(value) end end)
+        pcall(function() if noclipToggle  then noclipToggle:Set(value)  end end)
+        pcall(function() if speedToggle   then speedToggle:Set(value)   end end)
+    end,
+})
+
+homeTab:CreateSection("Status")
+homeTab:CreateParagraph({
+    Title = "Live stats are shown in the top-left overlay",
+    Content = "Candy, Bag, Wave, Phase, FPS, Time, Players.",
+})
+
+farmTab:CreateSection("Farming")
+
+autoFarmToggle = farmTab:CreateToggle({
+    name = "Auto Farm (Full Event Flow)",
+    currentValue = false,
+    flag = "AutoFarm",
+    callback = function(value) States.AutoFarm = value end,
+})
+
+farmTab:CreateToggle({
+    name = "Auto Slap (Nearest Minion)",
+    currentValue = false,
+    flag = "AutoSlap",
+    callback = function(value) States.AutoSlap = value end,
+})
+
+farmTab:CreateSlider({
+    name = "Slap Range",
+    range = { 0, 250 },
+    increment = 1,
+    suffix = " studs",
+    currentValue = 50,
+    flag = "SlapRange",
+    callback = function(value) States.SlapRange = value end,
+})
+
+farmTab:CreateToggle({
+    name = "Defend Cornifier",
+    currentValue = false,
+    flag = "DefendCornifier",
+    callback = function(value) States.DefendCornifier = value end,
+})
+
+autoSkipToggle = farmTab:CreateToggle({
+    name = "Auto Skip / Accept Dialogue",
+    currentValue = false,
+    flag = "AutoSkipDialogue",
+    callback = function(value) States.AutoSkipDialogue = value end,
+})
+
+moveTab:CreateSection("Movement")
+
+noclipToggle = moveTab:CreateToggle({
+    name = "Noclip",
+    currentValue = false,
+    flag = "Noclip",
+    callback = function(value) States.Noclip = value end,
+})
+
+moveTab:CreateToggle({
+    name = "Fly (WASD + Space / LeftShift)",
+    currentValue = false,
+    flag = "Fly",
+    callback = function(value) States.Fly = value end,
+})
+
+moveTab:CreateSlider({
+    name = "Fly Speed",
+    range = { 10, 250 },
+    increment = 1,
+    suffix = " studs/s",
+    currentValue = 50,
+    flag = "FlySpeed",
+    callback = function(value) States.FlySpeed = value end,
+})
+
+speedToggle = moveTab:CreateToggle({
+    name = "Speed Hack",
+    currentValue = false,
+    flag = "SpeedHack",
+    callback = function(value) States.SpeedHack = value end,
+})
+
+moveTab:CreateSlider({
+    name = "WalkSpeed",
+    range = { 16, 300 },
+    increment = 1,
+    currentValue = 60,
+    flag = "WalkSpeed",
+    callback = function(value) States.WalkSpeed = value end,
+})
+
+moveTab:CreateSlider({
+    name = "JumpPower",
+    range = { 50, 300 },
+    increment = 1,
+    currentValue = 100,
+    flag = "JumpPower",
+    callback = function(value) States.JumpPower = value end,
+})
+
+moveTab:CreateToggle({
+    name = "Panic (Void Safe)",
+    currentValue = false,
+    flag = "Panic",
+    callback = function(value) States.Panic = value end,
+})
+
+actTab:CreateSection("Quick Actions")
+
+actTab:CreateButton({
+    name = "Teleport to Count Cornifier",
+    callback = function()
+        local _, cHrp = getCornifier()
+        if cHrp and LocalPlayer.Character then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = cHrp.CFrame * CFrame.new(0, 5, 8)
+        end
+    end,
+})
+
+actTab:CreateButton({
+    name = "Join Event (Teleport to Obtainment Place)",
+    callback = function()
+        if isInObtainmentPlace() then return end
+        teleportToObtainment()
+    end,
+})
+
+actTab:CreateButton({
+    name = "Force Respawn (Unstick)",
+    callback = function()
+        local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if Remotes and Remotes:FindFirstChild("RequestRetry") then
+            Remotes.RequestRetry:FireServer()
+        end
+    end,
+})
+
+actTab:CreateButton({
+    name = "Rejoin New Public Server",
+    callback = function()
+        local opts = Instance.new("TeleportOptions")
+        opts.ShouldReserveServer = false
+        TeleportService:TeleportAsync(game.PlaceId, { LocalPlayer }, opts)
+    end,
+})
+
+-- ==========================================
+-- 🏃 FAST LOOP
+-- ==========================================
 RunService.Heartbeat:Connect(function()
     local char = LocalPlayer.Character
     if not char then return end
@@ -220,19 +479,28 @@ RunService.Heartbeat:Connect(function()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
 
-    -- Noclip
+    -- Auto-master sync
+    if States.Auto then
+        States.AutoFarm = true
+        States.AutoSkipDialogue = true
+        States.Noclip = true
+        States.SpeedHack = true
+    end
+
+    -- Auto HP top-up (prevents dying during defense in Auto)
+    if States.Auto and hum.Health > 0 and hum.Health < hum.MaxHealth then
+        hum.Health = hum.MaxHealth
+    end
+
     if States.Noclip and hum.Health > 0 then
         for _, v in pairs(char:GetDescendants()) do
             if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
         end
     end
 
-    ---------------------------------------------------------------
-    -- PANIC TOGGLE (stay safe in void while ON, restore on OFF)
-    ---------------------------------------------------------------
+    -- PANIC
     if States.Panic and hum.Health > 0 then
         if PanicCharacter ~= char then
-            -- Respawned while panic was on; forget old restore point
             PanicCharacter = char
             PanicCFrame = nil
         elseif not PanicCFrame then
@@ -240,9 +508,7 @@ RunService.Heartbeat:Connect(function()
         end
         hrp.CFrame = CFrame.new(0, 5000, 0)
         hrp.Anchored = true
-        if hum.Health < hum.MaxHealth then
-            hum.Health = hum.MaxHealth
-        end
+        if hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
     elseif PanicCharacter then
         if hrp then
             hrp.Anchored = false
@@ -254,12 +520,9 @@ RunService.Heartbeat:Connect(function()
         PanicCFrame = nil
     end
 
-    ---------------------------------------------------------------
-    -- FLY (camera-relative with vertical control)
-    ---------------------------------------------------------------
+    -- FLY
     if States.Fly and hum.Health > 0 then
         hum.PlatformStand = true
-
         local bv = hrp:FindFirstChild("FlyBV")
         if not bv then
             bv = Instance.new("BodyVelocity")
@@ -268,7 +531,6 @@ RunService.Heartbeat:Connect(function()
             bv.Velocity = Vector3.zero
             bv.Parent = hrp
         end
-
         local bg = hrp:FindFirstChild("FlyBG")
         if not bg then
             bg = Instance.new("BodyGyro")
@@ -278,7 +540,6 @@ RunService.Heartbeat:Connect(function()
             bg.D = 500
             bg.Parent = hrp
         end
-
         local cam = workspace.CurrentCamera
         local dir = Vector3.zero
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
@@ -287,12 +548,7 @@ RunService.Heartbeat:Connect(function()
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0, 1, 0) end
-
-        if dir.Magnitude > 0 then
-            bv.Velocity = dir.Unit * States.FlySpeed
-        else
-            bv.Velocity = Vector3.zero
-        end
+        bv.Velocity = dir.Magnitude > 0 and dir.Unit * States.FlySpeed or Vector3.zero
         bg.CFrame = cam.CFrame
     else
         local bv = hrp:FindFirstChild("FlyBV")
@@ -311,52 +567,36 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- 2. Auto Slap Loop
+-- ==========================================
+-- 🎯 AUTO SLAP (individual)
+-- ==========================================
 task.spawn(function()
     while task.wait() do
-        if States.AutoSlap then
+        if States.AutoSlap and not (States.AutoFarm or States.Auto) then
             local char = LocalPlayer.Character
             if char then
                 local hrp = char:FindFirstChild("HumanoidRootPart")
-                local tool = char:FindFirstChildOfClass("Tool")
                 local hum = char:FindFirstChildOfClass("Humanoid")
-
-                if hrp and tool and tool.Name == "Lantern" and hum and hum.Health > 0 then
-                    local closestTarget = nil
-                    local shortestDistance = States.SlapRange
-
-                    for _, tag in ipairs({"PatrolNPC", "WaveMinion"}) do
+                if hrp and hum and hum.Health > 0 and equipLantern(char) then
+                    local closest, shortest = nil, States.SlapRange
+                    for _, tag in ipairs({ "PatrolNPC", "WaveMinion" }) do
                         for _, npc in ipairs(CollectionService:GetTagged(tag)) do
                             if npc:IsDescendantOf(workspace) then
                                 local mHum = npc:FindFirstChildOfClass("Humanoid")
                                 local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-
                                 if mHum and mHum.Health > 0 and mHrp then
-                                    local distance = (hrp.Position - mHrp.Position).Magnitude
-                                    if distance <= shortestDistance then
-                                        closestTarget = mHrp
-                                        shortestDistance = distance
-                                    end
+                                    local d = (hrp.Position - mHrp.Position).Magnitude
+                                    if d <= shortest then closest, shortest = mHrp, d end
                                 end
                             end
                         end
                     end
-
-                    if closestTarget then
-                        hrp.CFrame = closestTarget.CFrame * CFrame.new(0, 15, 0)
+                    if closest then
+                        hrp.CFrame = closest.CFrame * CFrame.new(0, 10, 0)
                         task.wait(0.05)
-
-                        local glove = tool:FindFirstChild("Glove")
-                        if glove and glove:IsA("BasePart") then
-                            glove.Size = Vector3.new(25, 25, 25)
-                            glove.Transparency = 1
-                            glove.CanCollide = false
-                        end
-
-                        tool:Activate()
-                        local remote = tool:FindFirstChild("Network")
-                        if remote then remote:FireServer("Hit", closestTarget) end
-
+                        slapOnce(char, closest)
+                        task.wait(0.35)
+                        slapOnce(char, closest)
                         task.wait(0.5)
                     end
                 end
@@ -365,59 +605,43 @@ task.spawn(function()
     end
 end)
 
--- 3. Defend Cornifier Loop
+-- ==========================================
+-- 🛡️ DEFEND CORNIFIER (individual)
+-- ==========================================
 task.spawn(function()
     while task.wait() do
-        if States.DefendCornifier then
+        if States.DefendCornifier and not (States.AutoFarm or States.Auto) then
             local char = LocalPlayer.Character
             if char then
                 local hrp = char:FindFirstChild("HumanoidRootPart")
-                local tool = char:FindFirstChildOfClass("Tool")
                 local hum = char:FindFirstChildOfClass("Humanoid")
-
-                if hrp and tool and tool.Name == "Lantern" and hum and hum.Health > 0 then
-                    local dropZone = workspace:FindFirstChild("DropZone")
-                    local cornifier = dropZone and (dropZone:FindFirstChild("NPC") and (dropZone.NPC:FindFirstChild("NPC") or dropZone.NPC))
-                    local cHrp = cornifier and (cornifier:FindFirstChild("HumanoidRootPart") or cornifier.PrimaryPart)
-
+                if hrp and hum and hum.Health > 0 and equipLantern(char) then
+                    local _, cHrp = getCornifier()
                     if cHrp then
-                        local closestTarget = nil
-                        local minDist = 80
-
-                        for _, tag in ipairs({"PatrolNPC", "WaveMinion"}) do
+                        local target, minDist = nil, 80
+                        for _, tag in ipairs({ "PatrolNPC", "WaveMinion" }) do
                             for _, npc in ipairs(CollectionService:GetTagged(tag)) do
                                 if npc:IsDescendantOf(workspace) then
                                     local mHum = npc:FindFirstChildOfClass("Humanoid")
                                     local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-
                                     if mHum and mHum.Health > 0 and mHrp then
-                                        local distToCorn = (mHrp.Position - cHrp.Position).Magnitude
-                                        if distToCorn <= minDist then
-                                            closestTarget = mHrp
-                                            minDist = distToCorn
-                                        end
+                                        local d = (mHrp.Position - cHrp.Position).Magnitude
+                                        if d <= minDist then target, minDist = mHrp, d end
                                     end
                                 end
                             end
                         end
-
-                        if closestTarget then
-                            hrp.CFrame = closestTarget.CFrame * CFrame.new(0, 15, 0)
+                        if target then
+                            hrp.CFrame = target.CFrame * CFrame.new(0, 10, 0)
                             task.wait(0.05)
-
-                            local glove = tool:FindFirstChild("Glove")
-                            if glove and glove:IsA("BasePart") then
-                                glove.Size = Vector3.new(25, 25, 25)
-                                glove.Transparency = 1
-                                glove.CanCollide = false
-                            end
-
-                            tool:Activate()
-                            local remote = tool:FindFirstChild("Network")
-                            if remote then remote:FireServer("Hit", closestTarget) end
-
+                            slapOnce(char, target)
+                            task.wait(0.35)
+                            slapOnce(char, target)
                             task.wait(0.5)
                             hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
+                        else
+                            hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
+                            task.wait(0.5)
                         end
                     end
                 end
@@ -426,152 +650,493 @@ task.spawn(function()
     end
 end)
 
--- Helper: reliable ProximityPrompt trigger
-local function triggerPrompt(prompt, anchorPart)
-    local anchored = false
-    if anchorPart then
-        anchorPart.Anchored = true
-        anchored = true
+-- ==========================================
+-- 💬 DIALOGUE AUTO-RESPOND
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.4) do
+        if not (States.AutoFarm or States.AutoSkipDialogue or States.Auto) then continue end
+        if workspace:GetAttribute("DialogueOpen") ~= true then continue end
+        if tick() - lastDialogueFire < 0.9 then continue end
+        lastDialogueFire = tick()
+        local remotes = getDialogueRemotes()
+        if remotes then
+            local respond = remotes:FindFirstChild("ResondToDialogue")
+            if respond then pcall(function() respond:FireServer(1) end) end
+            local voteSkip = remotes:FindFirstChild("VoteSkip")
+            if voteSkip then pcall(function() voteSkip:FireServer() end) end
+        end
     end
+end)
 
-    local fired = false
-    if typeof(fireproximityprompt) == "function" then
-        fired = pcall(fireproximityprompt, prompt)
+-- ==========================================
+-- 🌾 FARM ACTION HELPERS
+-- ==========================================
+local function depositCandy(hrp)
+    local dropZone = workspace:FindFirstChild("DropZone")
+    if not dropZone then return false end
+    for _, p in ipairs(dropZone:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.Enabled then
+            local parent = p.Parent
+            local target
+            if parent:IsA("BasePart") then
+                target = parent
+            elseif parent:IsA("Model") then
+                target = parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
+            end
+            if target then
+                hrp.CFrame = target.CFrame * CFrame.new(0, 3, 0)
+                task.wait(0.3)
+                triggerPrompt(p)
+                task.wait(1.2)
+                return true
+            end
+            break
+        end
     end
-    if not fired then
-        pcall(function()
-            prompt:InputHoldBegin()
-            task.wait((prompt.HoldDuration or 0) + 0.15)
-            prompt:InputHoldEnd()
-        end)
-    end
-
-    if anchored and anchorPart then
-        anchorPart.Anchored = false
-    end
-
-    return fired
+    return false
 end
 
--- 4. Auto Farm Houses (FIXED)
-task.spawn(function()
-    while task.wait(0.5) do
-        if not States.AutoFarm then continue end
+local function talkToCornifier(char, hrp)
+    local model, cHrp = getCornifier()
+    if not (model and cHrp) then return false end
+    if (hrp.Position - cHrp.Position).Magnitude > 12 then
+        hrp.CFrame = cHrp.CFrame * CFrame.new(0, 3, 8)
+        task.wait(0.3)
+    end
+    for _, p in ipairs(model:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.Enabled then
+            triggerPrompt(p)
+            task.wait(0.5)
+            return true
+        end
+    end
+    return false
+end
 
+local function farmCandies(char, hrp)
+    if not equipLantern(char) then task.wait(0.5); return end
+
+    local target, minDist = nil, 250
+    for _, npc in ipairs(CollectionService:GetTagged("PatrolNPC")) do
+        if npc:IsDescendantOf(workspace) and npc:GetAttribute("IsAnomalySpawn") ~= true then
+            local mHum = npc:FindFirstChildOfClass("Humanoid")
+            local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+            if mHum and mHum.Health > 0 and mHrp then
+                local d = (mHrp.Position - hrp.Position).Magnitude
+                if d < minDist then target, minDist = mHrp, d end
+            end
+        end
+    end
+
+    if target then
+        hrp.CFrame = target.CFrame * CFrame.new(0, 10, 0)
+        task.wait(0.05)
+        slapOnce(char, target)
+        task.wait(0.35)
+        slapOnce(char, target)
+        task.wait(0.4)
+        return
+    end
+
+    for _, door in ipairs(CollectionService:GetTagged("Door")) do
+        if door:IsDescendantOf(workspace)
+            and door:GetAttribute("Enabled") == true
+            and door:GetAttribute("WasCollected") ~= true
+            and door:GetAttribute("Open") ~= true
+            and door:GetAttribute("IsAnomaly") ~= true then
+            local prompt = door:FindFirstChild("ProximityPrompt", true)
+            if prompt and prompt.Enabled then
+                local doorPart = prompt.Parent
+                if doorPart and doorPart:IsA("BasePart") then
+                    hrp.CFrame = doorPart.CFrame * CFrame.new(0, 3, 0)
+                    task.wait(0.2)
+                    triggerPrompt(prompt)
+                    local t0 = tick()
+                    while tick() - t0 < 6 do
+                        if workspace:GetAttribute("DialogueOpen") == true then break end
+                        task.wait(0.1)
+                    end
+                    local t1 = tick()
+                    while tick() - t1 < 5 do
+                        if workspace:GetAttribute("DialogueOpen") ~= true then break end
+                        task.wait(0.2)
+                    end
+                    task.wait(0.4)
+                    return
+                end
+            end
+        end
+    end
+
+    task.wait(0.8)
+end
+
+local function defendWave(char, hrp)
+    local _, cHrp = getCornifier()
+    if not cHrp then task.wait(0.4); return end
+    if not equipLantern(char) then task.wait(0.3); return end
+
+    local target, minDist = nil, math.huge
+    for _, npc in ipairs(CollectionService:GetTagged("WaveMinion")) do
+        if npc:IsDescendantOf(workspace) then
+            local mHum = npc:FindFirstChildOfClass("Humanoid")
+            local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+            if mHum and mHum.Health > 0 and mHrp then
+                local d = (mHrp.Position - cHrp.Position).Magnitude
+                if d < minDist then target, minDist = mHrp, d end
+            end
+        end
+    end
+
+    if target then
+        hrp.CFrame = target.CFrame * CFrame.new(0, 8, 0)
+        task.wait(0.05)
+        slapOnce(char, target)
+        task.wait(0.25)
+    else
+        if (hrp.Position - cHrp.Position).Magnitude > 30 then
+            hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
+        end
+        task.wait(0.25)
+    end
+end
+
+-- FIXED: search whole model + workspace fallback for prompt
+local function collectSoulCandy(hrp)
+    local soul = workspace:FindFirstChild("SoulCandy", true)
+    if not soul then return false end
+
+    local target
+    if soul:IsA("BasePart") then
+        target = soul
+    elseif soul:IsA("Model") then
+        target = soul.PrimaryPart or soul:FindFirstChildWhichIsA("BasePart")
+    end
+    if not target then return false end
+
+    hrp.CFrame = target.CFrame * CFrame.new(0, 3, 0)
+    task.wait(0.3)
+
+    -- Search entire SoulCandy for a prompt
+    local prompt = soul:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if not prompt then
+        -- Fallback: any nearby prompt
+        for _, p in ipairs(workspace:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and p.Enabled then
+                local pPart = p.Parent
+                if pPart and pPart:IsA("BasePart")
+                    and (pPart.Position - target.Position).Magnitude < 15 then
+                    prompt = p
+                    break
+                end
+            end
+        end
+    end
+    if prompt then triggerPrompt(prompt) end
+    task.wait(0.6)
+    return true
+end
+
+-- NEW: try to feed Cornifier the SoulCandy (Feed prompt)
+local function feedCornifier(hrp)
+    local _, cHrp = getCornifier()
+    if not cHrp then return false end
+
+    -- Look for a "Feed" prompt near Cornifier
+    local feedPrompt
+    for _, p in ipairs(workspace:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.Enabled
+            and p.ActionText and p.ActionText:lower():find("feed") then
+            local pPart = p.Parent
+            if pPart and pPart:IsA("BasePart")
+                and (pPart.Position - cHrp.Position).Magnitude < 25 then
+                feedPrompt = p
+                break
+            end
+        end
+    end
+
+    if not feedPrompt then return false end
+    hrp.CFrame = cHrp.CFrame * CFrame.new(0, 3, 8)
+    task.wait(0.3)
+    triggerPrompt(feedPrompt)
+    task.wait(1)
+    return true
+end
+
+-- FIXED: specific glove name + safe fallback
+local function tryRetrieveGlove(hrp)
+    local SPECIFIC_NAMES = { "RevenantGlove", "Revenant", "Glove" }
+
+    local candidates = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            for _, name in ipairs(SPECIFIC_NAMES) do
+                if obj.Name == name then
+                    table.insert(candidates, obj)
+                    break
+                end
+            end
+        end
+    end
+
+    local endSeq = workspace:FindFirstChild("EndSequence")
+    if endSeq then
+        for _, obj in ipairs(endSeq:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                for _, name in ipairs(SPECIFIC_NAMES) do
+                    if obj.Name == name then
+                        table.insert(candidates, obj)
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    if #candidates > 0 then
+        local t = candidates[1]
+        hrp.CFrame = t.CFrame * CFrame.new(0, 3, 0)
+        task.wait(0.4)
+        local prompt = t:FindFirstChildWhichIsA("ProximityPrompt", true)
+            or (t.Parent and t.Parent:FindFirstChildWhichIsA("ProximityPrompt", true))
+        if prompt then
+            triggerPrompt(prompt)
+            task.wait(1.5)
+            return true
+        end
+    end
+
+    -- Fallback: any prompt NOT on a Door or DropZone
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled then
+            local model = obj:FindFirstAncestorOfClass("Model")
+            local isDoor = model and model:HasTag("Door")
+            local isDropZone = model and model:HasTag("DropZone")
+            if not isDoor and not isDropZone then
+                local basePart = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart"))
+                if basePart then
+                    hrp.CFrame = basePart.CFrame * CFrame.new(0, 3, 0)
+                    task.wait(0.4)
+                    triggerPrompt(obj)
+                    task.wait(1.5)
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+-- ==========================================
+-- 🚜 AUTO FARM MASTER LOOP (fixed ordering & timing)
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.3) do
+        local active = States.Auto or States.AutoFarm
+        if not active then
+            currentPhase = "Idle"
+            continue
+        end
+
+        -- Already completed this session
+        if gameCompleted then
+            currentPhase = "COMPLETE ✓"
+            task.wait(2)
+            continue
+        end
+
+        -- ============================================
+        -- Place detection
+        -- ============================================
+        if isInObtainmentPlace() then
+            everInObtainment = true
+        elseif isInMainPlace() then
+            if everInObtainment then
+                -- Sent back to main = event finished (badge obtained)
+                gameCompleted = true
+                currentPhase = "COMPLETE — Badge Obtained!"
+                States.Auto = false
+                States.AutoFarm = false
+                States.AutoSkipDialogue = false
+                States.SpeedHack = false
+                States.Noclip = false
+                pcall(function() if autoToggle     then autoToggle:Set(false)     end end)
+                pcall(function() if autoFarmToggle then autoFarmToggle:Set(false) end end)
+                notify({
+                    Title = "Revant Glove Farmer",
+                    Content = "✓ Badge obtained! Auto disabled.",
+                    Duration = 10,
+                })
+                task.wait(2)
+                continue
+            else
+                -- Not yet in event → teleport
+                currentPhase = "Teleporting to Event"
+                if tick() - lastTeleportAttempt > 10 then
+                    lastTeleportAttempt = tick()
+                    teleportToObtainment()
+                end
+                task.wait(1)
+                continue
+            end
+        else
+            currentPhase = "Unknown Place — waiting"
+            task.wait(1)
+            continue
+        end
+
+        -- ============================================
+        -- Character check
+        -- ============================================
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if not (char and char:FindFirstChild("HumanoidRootPart") and hum and hum.Health > 0) then
+            currentPhase = "Waiting for Character"
+            task.wait(0.5)
             continue
         end
 
         local hrp = char.HumanoidRootPart
+        local round = workspace:GetAttribute("Round") or 1
+        local deposited = workspace:GetAttribute("DepositedCandy") or 0
+        local waveStarted = workspace:GetAttribute("WaveStarted") == true
+        local finalStarted = workspace:GetAttribute("FinalStarted") == true
+        local finalEating = workspace:GetAttribute("FinalEating") == true
+        local dialogueOpen = workspace:GetAttribute("DialogueOpen") == true
+        local gameStarted = workspace:GetAttribute("GameStarted") == true
+        local soulCandy = workspace:GetAttribute("SoulCandyCollected") == true
+        local activeTransition = workspace:GetAttribute("ActiveTransition")
 
-        -- Real bag size based on player count
-        local pc = #Players:GetPlayers()
-        local bagSize = 600
-        if pc == 1 then
-            bagSize = 2000
-        elseif pc == 2 then
-            bagSize = 1500
-        elseif pc == 3 then
-            bagSize = 1000
+        -- ============================================
+        -- END SEQUENCE (glove drop) — check FIRST but
+        -- only act after the transition has finished
+        -- ============================================
+        local endSeq = workspace:FindFirstChild("EndSequence")
+        if endSeq and endSeq:GetAttribute("MapHiddenAt") then
+            reachedEndSequence = true
+            if activeTransition == "EndSequence" then
+                currentPhase = "End Sequence — Camera Locked"
+                task.wait(1)
+                continue
+            end
+            currentPhase = "Retrieving Glove"
+            tryRetrieveGlove(hrp)
+            task.wait(0.5)
+            continue
         end
 
-        local collected = char:GetAttribute("CollectedCandy") or 0
-        local bagFull = collected >= bagSize
-
-        if bagFull then
-            -- ============ DEPOSIT ============
-            local dropZone = workspace:FindFirstChild("DropZone")
-            if dropZone then
-                local done = false
-                for _, p in ipairs(dropZone:GetDescendants()) do
-                    if p:IsA("ProximityPrompt")
-                        and (p.ActionText == "Deposit Candy" or p.ActionText == "Vote Start")
-                        and p.Enabled then
-
-                        local parent = p.Parent
-                        local target
-                        if parent:IsA("BasePart") then
-                            target = parent
-                        elseif parent:IsA("Model") then
-                            target = parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
-                        end
-
-                        if target then
-                            hrp.CFrame = target.CFrame * CFrame.new(0, 3, 0)
-                            task.wait(0.2)
-                            triggerPrompt(p, hrp)
-                            task.wait(0.4)
-                            done = true
-                        end
-                        break
-                    end
-                end
-                if not done then task.wait(0.5) end
-            end
-        else
-            -- ============ FARM DOORS ============
-            local doors = CollectionService:GetTagged("Door")
-            local handled = false
-
-            for _, door in ipairs(doors) do
-                if door:GetAttribute("Enabled") and not door:GetAttribute("WasCollected") then
-                    local prompt = door:FindFirstChild("ProximityPrompt", true)
-                    if prompt and prompt.Enabled then
-                        local doorPart = prompt.Parent
-                        if doorPart and doorPart:IsA("BasePart") then
-                            hrp.CFrame = doorPart.CFrame * CFrame.new(0, 3, 0)
-                            task.wait(0.2)
-
-                            triggerPrompt(prompt, hrp)
-
-                            local t0 = tick()
-                            local opened = false
-                            while tick() - t0 < 7 do
-                                if workspace:GetAttribute("DialogueOpen") == true then
-                                    opened = true
-                                    break
-                                end
-                                task.wait(0.1)
-                            end
-
-                            if opened then
-                                task.wait(0.6)
-                                local dr = ReplicatedStorage:FindFirstChild("Modules")
-                                    and ReplicatedStorage.Modules:FindFirstChild("Common")
-                                    and ReplicatedStorage.Modules.Common:FindFirstChild("DialogueServer")
-                                    and ReplicatedStorage.Modules.Common.DialogueServer:FindFirstChild("Remotes")
-                                local respond = dr and dr:FindFirstChild("ResondToDialogue")
-                                if respond then
-                                    respond:FireServer(1) -- "* accept candy *"
-                                end
-                                task.wait(1.5)
-                            else
-                                task.wait(0.5)
-                            end
-
-                            handled = true
-                            break
-                        end
-                    end
-                end
-            end
-
-            if not handled then task.wait(1) end
+        -- ============================================
+        -- DIALOGUE (check BEFORE gameStarted to
+        -- prevent Cornifier spam)
+        -- ============================================
+        if dialogueOpen then
+            currentPhase = "Dialogue"
+            task.wait(0.3)
+            continue
         end
+
+        -- ============================================
+        -- GAME NOT STARTED → talk to Cornifier
+        -- ============================================
+        if not gameStarted then
+            currentPhase = "Starting Game"
+            if tick() - lastTalkAttempt > 2 then
+                lastTalkAttempt = tick()
+                talkToCornifier(char, hrp)
+            end
+            task.wait(0.5)
+            continue
+        end
+
+        -- ============================================
+        -- FINAL EATING → defend urgently
+        -- ============================================
+        if finalEating then
+            currentPhase = "FINAL DEFENSE"
+            defendWave(char, hrp)
+            continue
+        end
+
+        -- ============================================
+        -- REGULAR WAVE → defend
+        -- ============================================
+        if waveStarted then
+            currentPhase = "Defending Wave"
+            defendWave(char, hrp)
+            continue
+        end
+
+        -- ============================================
+        -- FINAL PHASE (not yet eating) → soul candy
+        -- ============================================
+        if finalStarted then
+            if not soulCandy then
+                -- Try to collect SoulCandy from world
+                local soulObj = workspace:FindFirstChild("SoulCandy", true)
+                if soulObj then
+                    currentPhase = "Collect Soul Candy"
+                    collectSoulCandy(hrp)
+                else
+                    -- Fallback: try feeding (in case soul is already held)
+                    currentPhase = "Find Feed Prompt"
+                    if not feedCornifier(hrp) then
+                        task.wait(0.5)
+                    end
+                end
+            else
+                -- Soul candy collected → feed Cornifier
+                currentPhase = "Feed Cornifier"
+                if not feedCornifier(hrp) then
+                    task.wait(0.5)
+                end
+            end
+            continue
+        end
+
+        -- ============================================
+        -- QUOTA REACHED → vote to start
+        -- ============================================
+        local quota = ROUND_CANDY[round] or 4999
+        if deposited >= quota then
+            currentPhase = "Voting to Start Wave"
+            if tick() - lastVoteTime > 3 then
+                lastVoteTime = tick()
+                depositCandy(hrp)
+            else
+                task.wait(0.4)
+            end
+            continue
+        end
+
+        -- ============================================
+        -- BAG FULL → deposit
+        -- ============================================
+        local bagSize = getBagSize()
+        local myCandy = char:GetAttribute("CollectedCandy") or 0
+        if myCandy >= bagSize then
+            currentPhase = "Depositing Candy"
+            depositCandy(hrp)
+            continue
+        end
+
+        -- ============================================
+        -- ELSE → farm candy
+        -- ============================================
+        currentPhase = "Farming Candy"
+        farmCandies(char, hrp)
     end
 end)
 
--- 5. Auto Skip Dialogue
-if DialogueRemotes then
-    local voteSkip = DialogueRemotes:FindFirstChild("VoteSkip")
-    if voteSkip then
-        workspace:GetAttributeChangedSignal("DialogueOpen"):Connect(function()
-            if States.AutoSkipDialogue and workspace:GetAttribute("DialogueOpen") then
-                task.wait(0.5)
-                voteSkip:FireServer()
-            end
-        end)
-    end
-end
+-- ==========================================
+-- 📢 STARTUP
+-- ==========================================
+notify({
+    Title = "Revant Glove Farmer",
+    Content = "Loaded — Made by DerpBot. Enable AUTO in Home tab.",
+    Duration = 6,
+})
+
+print("[Revant Glove Farmer] Loaded — Made by DerpBot")
