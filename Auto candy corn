@@ -1,0 +1,65 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local plr = Players.LocalPlayer
+
+local isRunning = true
+local platform
+
+local function setupFarm()
+    local char = plr.Character or plr.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    
+    -- Cleanup old platform if it exists
+    if platform and platform.Parent then
+        platform:Destroy()
+    end
+    
+    -- Create the platform
+    platform = Instance.new("Part", workspace)
+    platform.Name = "CandyFarmPlatform"
+    platform.Size = Vector3.new(100, 5, 100)
+    platform.Position = Vector3.new(-116.48684692382812, 1727.9461669921875, 610.4417114257812)
+    platform.Anchored = true
+    
+    -- The farm loop
+    task.spawn(function()
+        while isRunning do
+            task.wait(0.25)
+            local candyFolder = workspace:FindFirstChild("CandyCorns")
+            
+            if candyFolder and char and char:FindFirstChild("HumanoidRootPart") then
+                local currentHrp = char.HumanoidRootPart
+                
+                for _, candy in pairs(candyFolder:GetChildren()) do
+                    if candy.Parent and candy:IsA("BasePart") then
+                        pcall(function()
+                            candy.CFrame = currentHrp.CFrame
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Handle respawns
+plr.CharacterAdded:Connect(function()
+    if isRunning then
+        task.wait(1) -- wait for character to load
+        setupFarm()
+    end
+end)
+
+-- Start the farm
+setupFarm()
+
+-- Press Q to stop and cleanup
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.Q then
+        isRunning = false
+        if platform then platform:Destroy() end
+        print("[Farm] Stopped. You can safely reset or walk away now.")
+    end
+end)
+
+print("[Farm] Started! Pulling all candy corns. Press Q to stop.")
