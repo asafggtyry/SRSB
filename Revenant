@@ -1,1142 +1,2403 @@
---[[
-    ╔═══════════════════════════════════════════════╗
-    ║         REVANT GLOVE FARMER v3                ║
-    ║             Made by DerpBot                   ║
-    ╚═══════════════════════════════════════════════╝
---]]
+local Helpers={}
+-- Revant Farmer / Frosted dashboard
+-- Translucent panels, clear game view, camera-assisted prompts.
+local Players=game:GetService("Players")
+local LocalPlayer=Players.LocalPlayer
+local PlayerGui=LocalPlayer:WaitForChild("PlayerGui")
+local UserInputService=game:GetService("UserInputService")
+local RunService=game:GetService("RunService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local CollectionService=game:GetService("CollectionService")
+local TweenService=game:GetService("TweenService")
+local Lighting=game:GetService("Lighting")
+local existing=PlayerGui:FindFirstChild("RevantFarmer")
+if existing then existing:Destroy() end
 
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local CollectionService = game:GetService("CollectionService")
-local TeleportService = game:GetService("TeleportService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
-local UserInputService = game:GetService("UserInputService")
-
--- ==========================================
--- ⚙️ STATES & CONSTANTS
--- ==========================================
-local States = {
-    Auto = false,
-    AutoFarm = false,
-    AutoSlap = false,
-    DefendCornifier = false,
-    Noclip = false,
-    Fly = false,
-    AutoSkipDialogue = false,
-    SpeedHack = false,
-    Panic = false,
-    WalkSpeed = 60,
-    JumpPower = 100,
-    FlySpeed = 50,
-    SlapRange = 50
-}
-
-local ROUND_CANDY = { 2000, 3000, 4999 }
-local MAIN_PLACE_IDS = { 6403373529, 13497000683 }
-local OBTAINMENT_PLACE_IDS = { 82340649038345, 106260546437816 }
-
-local PanicCharacter = nil
-local PanicCFrame = nil
-local lastVoteTime = 0
-local lastDialogueFire = 0
-local lastTeleportAttempt = 0
-local lastTalkAttempt = 0
-local scriptStartTime = tick()
-local currentPhase = "Idle"
-
--- Completion tracking
-local everInObtainment = false
-local reachedEndSequence = false
-local gameCompleted = false
-
-local function notify(cfg)
-    pcall(function() Rayfield:Notify(cfg) end)
-    pcall(function() window:Notify(cfg) end)
+local C={window=Color3.fromRGB(90,88,85),panel=Color3.fromRGB(108,107,103),
+    text=Color3.fromRGB(255,255,241),muted=Color3.fromRGB(219,218,208),
+    border=Color3.fromRGB(255,255,239),purple=Color3.fromRGB(251,253,225),
+    button=Color3.fromRGB(251,253,225),green=Color3.fromRGB(225,235,195),
+    danger=Color3.fromRGB(84,77,73),blue=Color3.fromRGB(221,229,223),
+    warn=Color3.fromRGB(245,235,194),topBar=Color3.fromRGB(116,114,109)}
+local ink=Color3.fromRGB(48,48,43)
+local function corner(p,r)
+    local o=Instance.new("UICorner"); o.CornerRadius=UDim.new(0,r or 20); o.Parent=p
 end
-
--- ==========================================
--- 📊 FPS COUNTER
--- ==========================================
-local currentFPS = 0
-do
-    local frames = 0
-    local lastCheck = tick()
-    RunService.RenderStepped:Connect(function()
-        frames += 1
-        local now = tick()
-        if now - lastCheck >= 1 then
-            currentFPS = math.floor(frames / (now - lastCheck) + 0.5)
-            frames = 0
-            lastCheck = now
-        end
+local function stroke(p,t)
+    local o=Instance.new("UIStroke"); o.Color=C.border; o.Transparency=t or .76
+    o.Thickness=1; o.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; o.Parent=p; return o
+end
+local function frame(p,x,y,w,h,color,transparency,r)
+    local o=Instance.new("Frame"); o.Position=UDim2.fromOffset(x,y); o.Size=UDim2.fromOffset(w,h)
+    o.BackgroundColor3=color or C.panel; o.BackgroundTransparency=transparency or 0
+    o.BorderSizePixel=0; o.Parent=p; if r then corner(o,r) end; return o
+end
+local function text(p,value,x,y,w,h,size,color,font)
+    local o=Instance.new("TextLabel"); o.Position=UDim2.fromOffset(x,y); o.Size=UDim2.fromOffset(w,h)
+    o.BackgroundTransparency=1; o.Text=value; o.TextColor3=color or C.text
+    o.TextSize=size or 14; o.Font=font or Enum.Font.Gotham; o.TextXAlignment=Enum.TextXAlignment.Left
+    o.TextTruncate=Enum.TextTruncate.AtEnd; o.Parent=p; return o
+end
+local function button(p,value,x,y,w,h,filled)
+    local o=Instance.new("TextButton"); o.Position=UDim2.fromOffset(x,y); o.Size=UDim2.fromOffset(w,h)
+    o.BackgroundColor3=filled and C.purple or C.panel; o.BackgroundTransparency=filled and .02 or .68
+    o.Text=value; o.TextColor3=filled and ink or C.text; o.TextSize=13; o.Font=Enum.Font.GothamMedium
+    o.BorderSizePixel=0; o.AutoButtonColor=false; o.Parent=p; corner(o,h/2); stroke(o,filled and .9 or .5)
+    o.MouseEnter:Connect(function()
+        TweenService:Create(o,TweenInfo.new(.16),{BackgroundTransparency=filled and 0 or .4}):Play()
     end)
-end
-
--- ==========================================
--- 🔧 HELPERS
--- ==========================================
-local function getBagSize()
-    local pc = #Players:GetPlayers()
-    if pc == 1 then return 2000
-    elseif pc == 2 then return 1500
-    elseif pc == 3 then return 1000
-    else return 600 end
-end
-
-local function getDialogueRemotes()
-    local modules = ReplicatedStorage:FindFirstChild("Modules")
-    local common = modules and modules:FindFirstChild("Common")
-    local ds = common and common:FindFirstChild("DialogueServer")
-    return ds and ds:FindFirstChild("Remotes")
-end
-
-local function triggerPrompt(prompt)
-    if not prompt then return false end
-    if typeof(fireproximityprompt) == "function" then
-        if pcall(fireproximityprompt, prompt) then return true end
-    end
-    return pcall(function()
-        prompt:InputHoldBegin()
-        task.wait((prompt.HoldDuration or 0) + 0.2)
-        prompt:InputHoldEnd()
+    o.MouseLeave:Connect(function()
+        TweenService:Create(o,TweenInfo.new(.16),{BackgroundTransparency=filled and .02 or .68}):Play()
     end)
+    return o
+end
+local function sheen(p,amount)
+    local g=Instance.new("UIGradient"); g.Rotation=75
+    g.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,amount or .38)})
+    g.Parent=p
 end
 
-local function getCornifier()
-    local dropZone = workspace:FindFirstChild("DropZone")
-    if not dropZone then return nil, nil end
-    local npcFolder = dropZone:FindFirstChild("NPC")
-    if not npcFolder then return nil, nil end
-    local npcModel = npcFolder:FindFirstChild("NPC") or npcFolder
-    local hrp = npcModel:FindFirstChild("HumanoidRootPart") or npcModel.PrimaryPart
-    return npcModel, hrp
+local W,H=1140,684
+local sg=Instance.new("ScreenGui"); sg.Name="RevantFarmer"; sg.ResetOnSpawn=false
+sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; sg.DisplayOrder=30; sg.Parent=PlayerGui
+local mf=frame(sg,0,0,W,H,C.window,.48,38)
+mf.Name="FrostedDashboard"; mf.AnchorPoint=Vector2.new(.5,.5); mf.Position=UDim2.fromScale(.5,.5)
+mf.Active=true; mf.ClipsDescendants=true; stroke(mf,.42); sheen(mf,.28)
+local uiScale=Instance.new("UIScale"); uiScale.Parent=mf
+local function fitWindow()
+    local size=sg.AbsoluteSize
+    uiScale.Scale=math.min(1,math.max(.1,(size.X-44)/W),math.max(.1,(size.Y-44)/H))
 end
+sg:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitWindow); fitWindow()
+local oldBlur=Lighting:FindFirstChild("RevantFrostedBlur")
+if oldBlur then oldBlur:Destroy() end
 
-local function equipLantern(char)
-    if not char then return nil end
-    local tool = char:FindFirstChildOfClass("Tool")
-    if tool and tool.Name == "Lantern" then return tool end
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    if backpack then
-        local lantern = backpack:FindFirstChild("Lantern")
-        if lantern then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                pcall(function() hum:EquipTool(lantern) end)
-                task.wait(0.2)
-                return char:FindFirstChildOfClass("Tool")
+
+local tb=frame(mf,0,0,W,84,C.window,1)
+local nav=frame(tb,304,25,446,44,C.panel,.56,24); stroke(nav,.76); sheen(nav,.36)
+local navButtons={}
+for i,name in ipairs({"Overview","Controls","Portal"}) do
+    navButtons[name]=button(nav,name,5+(i-1)*146,4,144,36,i==1)
+end
+local userPill=frame(tb,898,26,134,42,C.panel,.44,22); stroke(userPill,.8)
+text(userPill,LocalPlayer.DisplayName,12,2,110,36,11)
+local minB=button(tb,"−",1046,29,30,30,false)
+local clsB=button(tb,"×",1082,29,30,30,false)
+local body=frame(mf,0,84,W,H-84,C.panel,1)
+local minimized=false
+minB.MouseButton1Click:Connect(function()
+    minimized=not minimized; body.Visible=not minimized; minB.Text=minimized and "+" or "−"
+    TweenService:Create(mf,TweenInfo.new(.22,Enum.EasingStyle.Quint),{Size=UDim2.fromOffset(W,minimized and 84 or H)}):Play()
+end)
+clsB.MouseButton1Click:Connect(function() sg:Destroy() end)
+local drag,ds,sp,dragInput
+local function onWindow(point)
+    local over=false
+    for _,obj in ipairs(PlayerGui:GetGuiObjectsAtPosition(point.X,point.Y)) do
+        if obj:IsDescendantOf(mf) then
+            over=true
+            local node=obj
+            while node and node~=mf do
+                if node:IsA("GuiButton") or node:IsA("TextBox") or node:IsA("ScrollingFrame") then return false end
+                node=node.Parent
             end
+        end
+    end
+    return over
+end
+local dragBeginConn=UserInputService.InputBegan:Connect(function(input)
+    if drag or (input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch) then return end
+    if not sg.Parent or not onWindow(input.Position) then return end
+    drag=true; ds=input.Position; sp=mf.Position; dragInput=input
+end)
+local dragMoveConn=UserInputService.InputChanged:Connect(function(input)
+    if not drag then return end
+    if input~=dragInput and input.UserInputType~=Enum.UserInputType.MouseMovement then return end
+    local d=input.Position-ds
+    mf.Position=UDim2.new(sp.X.Scale,sp.X.Offset+d.X,sp.Y.Scale,sp.Y.Offset+d.Y)
+end)
+local dragEndConn=UserInputService.InputEnded:Connect(function(input)
+    if input==dragInput then drag=false; dragInput=nil end
+end)
+
+local Settings={WalkSpeed=80,LoopDelay=.15,HitHeight=6,HouseYieldMargin=200}
+local Safety={enabled=false,paused=false,saved=nil,moved=false}
+local checkSafety
+local releaseCombatHold
+local releasePromptCamera
+local sliderConnections={}
+local S={AutoJoinPortal=false,AutoFarm=false,AutoDefend=false,AutoSlap=false,AutoDeposit=false,
+    AutoFarmHouses=false,SpeedHack=false,Noclip=false,AutoComplete=false}
+local AutoSeq={state="farm",completedWaves=0,generation=0,dialogueSerial=0}
+local autoTrace={}
+local function traceAuto(reason)
+    AutoSeq.reason=reason
+    autoTrace[#autoTrace+1]=string.format("%.1f [%s] %s",os.clock(),AutoSeq.state,reason)
+    if #autoTrace>30 then table.remove(autoTrace,1) end
+end
+local autoSavedState=nil
+local activeAutoToken=nil
+local function autoAlive()
+    return sg.Parent~=nil and not Safety.paused and S.AutoComplete and activeAutoToken==AutoSeq.generation
+end
+local function getChar()
+    local c=LocalPlayer.Character
+    return c,c and c:FindFirstChild("HumanoidRootPart"),c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function getBagCount()
+    local hud = PlayerGui:FindFirstChild("HUD")
+    local candyBag = hud and hud:FindFirstChild("CandyBag")
+    local label = candyBag and candyBag:FindFirstChild("TextLabel")
+    if label and (label:IsA("TextLabel") or label:IsA("TextButton")) then
+        local n = tonumber(label.Text:gsub(",", ""):match("%d+"))
+        if n then AutoSeq.bagReadable=true; return n end
+    end
+    local char = LocalPlayer.Character
+    if char then
+        local a = char:GetAttribute("CollectedCandy")
+        if tonumber(a) then AutoSeq.bagReadable=true; return tonumber(a) end
+    end
+    AutoSeq.bagReadable=false
+    return 0
+end
+
+-- Hero: a two-line title, open metrics, and a segmented circular counter.
+text(body,"Revenant",36,13,244,48,40,C.text,Enum.Font.GothamMedium)
+text(body,"Farmer",36,59,244,48,40,C.text,Enum.Font.GothamMedium)
+local ring=frame(body,282,22,92,92,C.panel,1)
+local ringSegments={}
+for i=1,30 do
+    local angle=math.rad((i-1)*12-90)
+    local seg=frame(ring,46+38*math.cos(angle)-3,46+38*math.sin(angle)-6,6,12,C.text,.8,3)
+    seg.Rotation=(i-1)*12; ringSegments[i]=seg
+end
+local ringText=text(ring,"1",19,26,54,40,25); ringText.TextXAlignment=Enum.TextXAlignment.Center
+text(body,"Round goal",421,23,190,20,12,C.muted)
+local roundLbl=text(body,"2,000",419,48,210,54,38)
+text(body,"Candy deposited",667,23,204,20,12,C.muted)
+local depLbl=text(body,"0",665,48,204,54,38)
+text(body,"In your bag",905,23,196,20,12,C.muted)
+local bagLbl=text(body,"0",903,48,196,54,38)
+
+local selectedPage="Overview"
+local pages={}
+local function showPage(name)
+    selectedPage=name
+    for key,page in pairs(pages) do page.Visible=key==name end
+    for key,b in pairs(navButtons) do
+        local chosen=key==name
+        b.BackgroundColor3=chosen and C.purple or C.panel
+        b.BackgroundTransparency=chosen and .02 or 1; b.TextColor3=chosen and ink or C.text
+    end
+end
+for name,b in pairs(navButtons) do b.MouseButton1Click:Connect(function() showPage(name) end) end
+
+-- Filter pills sit above the main dashboard card.
+local filters={}
+local toggleRows={}
+local function filterControls(category)
+    showPage("Controls")
+    for _,entry in ipairs(toggleRows) do entry.button.Visible=category=="All" or entry.category==category end
+    for name,b in pairs(filters) do
+        b.BackgroundColor3=name==category and C.purple or C.panel
+        b.BackgroundTransparency=name==category and .02 or .82
+        b.TextColor3=name==category and ink or C.text
+    end
+end
+for i,name in ipairs({"All","Farming","Combat","Movement"}) do
+    local b=button(body,name,36+(i-1)*106,143,100,36,i==1)
+    filters[name]=b; b.MouseButton1Click:Connect(function() filterControls(name) end)
+end
+local main=frame(body,36,196,766,340,C.panel,.49,28); stroke(main,.79); sheen(main,.3)
+for _,name in ipairs({"Overview","Controls","Portal"}) do
+    pages[name]=frame(main,0,0,766,340,C.panel,1)
+end
+local overview=pages.Overview
+local workflow=overview
+text(overview,"Run overview",24,18,220,28,16,C.text,Enum.Font.GothamMedium)
+local tag=button(overview,"3 waves",632,19,108,28,false); tag.Active=false
+local waveLabels={}
+local waveCards={}
+local stageCards={
+    {"01","Farm houses","Collect candy","2,000","First round target"},
+    {"02","Drop zone","Deposit + start","0","Candy deposited"},
+    {"03","Defend","Protect Cornifer","0 / 3","Waves cleared"}
+}
+for i,data in ipairs(stageCards) do
+    local card=frame(overview,24+(i-1)*242,66,232,182,Color3.fromRGB(62,62,58),.6,24)
+    stroke(card,.9); waveCards[i]=card
+    text(card,data[1],18,15,38,20,11,C.muted)
+    text(card,data[2],18,43,198,22,18,C.text,Enum.Font.GothamMedium)
+    text(card,data[3],18,70,198,18,11,C.muted)
+    waveLabels[i]=text(card,"WAVE "..i,18,147,198,18,10,C.muted)
+    local n=text(card,data[4],18,99,198,42,31)
+    if i==1 then n.Name="TargetMetric" elseif i==2 then n.Name="DepositMetric" else n.Name="WavesMetric" end
+end
+local stageLbl=text(overview,"Ready to start",24,265,490,24,17)
+local detailLbl=text(overview,"Houses  /  Deposit  /  Defend Cornifer",24,294,654,19,11,C.muted)
+local success=frame(overview,699,275,40,40,C.purple,.02,20)
+text(success,"✓",11,7,25,26,19,ink)
+local progressTrack=frame(overview,24,326,716,3,C.text,.85,2)
+local progressFill=frame(progressTrack,0,0,0,3,C.purple,0,2)
+progressFill.Size=UDim2.fromScale(0,1)
+
+-- Controls retain the same automation state, presented as light switches.
+text(pages.Controls,"Automation controls",24,18,480,30,20,C.text,Enum.Font.GothamMedium)
+local sc=Instance.new("ScrollingFrame"); sc.Position=UDim2.fromOffset(24,64); sc.Size=UDim2.fromOffset(718,252)
+sc.BackgroundTransparency=1; sc.BorderSizePixel=0; sc.ScrollBarThickness=2
+sc.ScrollBarImageColor3=C.muted; sc.AutomaticCanvasSize=Enum.AutomaticSize.Y; sc.CanvasSize=UDim2.new(); sc.Parent=pages.Controls
+local grid=Instance.new("UIGridLayout"); grid.CellSize=UDim2.new(.5,-7,0,54)
+grid.CellPadding=UDim2.fromOffset(12,10); grid.SortOrder=Enum.SortOrder.LayoutOrder; grid.Parent=sc
+local refreshList={}
+local categories={AutoFarm="Combat",AutoDefend="Combat",AutoSlap="Combat",AutoFarmHouses="Farming",AutoDeposit="Farming",SpeedHack="Movement",Noclip="Movement"}
+local function addToggle(title,key)
+    local b=Instance.new("TextButton"); b.Text=""; b.BackgroundColor3=C.panel; b.BackgroundTransparency=.57
+    b.AutoButtonColor=false; b.BorderSizePixel=0; b.LayoutOrder=#toggleRows+1; b.Parent=sc; corner(b,19); stroke(b,.86)
+    text(b,title,17,0,242,54,13)
+    local track=frame(b,294,17,40,22,C.text,.67,11)
+    local knob=frame(track,3,3,16,16,C.purple,0,8)
+    local function refresh()
+        TweenService:Create(track,TweenInfo.new(.18),{BackgroundColor3=S[key] and C.purple or C.text,BackgroundTransparency=S[key] and .1 or .73}):Play()
+        TweenService:Create(knob,TweenInfo.new(.18),{Position=UDim2.fromOffset(S[key] and 21 or 3,3),BackgroundColor3=S[key] and ink or C.purple}):Play()
+    end
+    b.MouseButton1Click:Connect(function() if Safety.paused then return end; S[key]=not S[key]; refresh() end)
+    toggleRows[#toggleRows+1]={button=b,category=categories[key]}; refreshList[key]=refresh; refresh()
+end
+addToggle("Farm houses","AutoFarmHouses"); addToggle("Auto deposit","AutoDeposit")
+addToggle("Defend Cornifer","AutoDefend"); addToggle("Kill minions","AutoFarm")
+addToggle("Auto slap","AutoSlap"); addToggle("Speed","SpeedHack"); addToggle("Noclip","Noclip")
+
+function Helpers.addSlider(title,key,minimum,maximum,step,format)
+    local b=Instance.new("TextButton"); b.Text=""; b.AutoButtonColor=false
+    b.BackgroundColor3=C.panel; b.BackgroundTransparency=.57; b.BorderSizePixel=0
+    b.LayoutOrder=#toggleRows+1; b.Parent=sc; corner(b,19); stroke(b,.86)
+    text(b,title,16,4,190,22,12)
+    local value=text(b,"",214,4,122,22,11,C.muted); value.TextXAlignment=Enum.TextXAlignment.Right
+    local bar=frame(b,16,36,318,4,C.text,.75,2)
+    local fill=frame(bar,0,0,0,4,C.purple,0,2)
+    local knob=frame(bar,0,-4,12,12,C.purple,0,6)
+    local function paint()
+        local alpha=(Settings[key]-minimum)/(maximum-minimum)
+        fill.Size=UDim2.new(alpha,0,1,0); knob.Position=UDim2.new(alpha,-6,0,-4)
+        value.Text=string.format(format or "%g",Settings[key])
+    end
+    local dragging=nil
+    local function update(input)
+        local alpha=math.clamp((input.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+        Settings[key]=math.clamp(minimum+math.floor(alpha*(maximum-minimum)/step+.5)*step,minimum,maximum)
+        if key=="WalkSpeed" and not Safety.paused then S.SpeedHack=true; if refreshList.SpeedHack then refreshList.SpeedHack() end end
+        paint()
+    end
+    b.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=input; update(input) end
+    end)
+    sliderConnections[#sliderConnections+1]=UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input==dragging or input.UserInputType==Enum.UserInputType.MouseMovement) then update(input) end
+    end)
+    sliderConnections[#sliderConnections+1]=UserInputService.InputEnded:Connect(function(input) if input==dragging then dragging=nil end end)
+    toggleRows[#toggleRows+1]={button=b,category="Movement"}; paint()
+end
+Helpers.addSlider("Walk speed","WalkSpeed",16,120,1,"%d")
+Helpers.addSlider("Loop speed","LoopDelay",.08,1,.02,"%.2f s")
+Helpers.addSlider("Hit height","HitHeight",3,8,.5,"%.1f studs")
+
+-- Warm cream action card and a separate translucent stop card.
+local primary=frame(body,826,374,278,162,C.purple,.015,28); stroke(primary,.85)
+text(primary,"Auto complete",22,17,236,24,17,ink,Enum.Font.GothamMedium)
+text(primary,"Farm. Deposit. Defend.",22,47,236,20,11,ink)
+text(primary,"3 waves",22,76,236,38,31,ink)
+local secondary=frame(body,826,196,278,162,C.panel,.5,28); stroke(secondary,.76); sheen(secondary,.3)
+text(secondary,"Session control",22,18,236,22,16)
+text(secondary,"Stop automation and restore movement",22,47,236,20,11,C.muted)
+local statLbl=text(body,"Ready to start",37,552,410,22,10,C.muted)
+local heartLbl=text(body,"HP  —",460,552,110,22,11,C.muted)
+local fpsLbl=text(body,"FPS  —",570,552,110,22,11,C.muted)
+local runtimeLbl=text(body,"Runtime  00:00:00",696,552,188,22,11,C.muted)
+local healthHum,healthConn,maxHealthConn
+function Helpers.hudHealth()
+    local hud=PlayerGui:FindFirstChild("HUD")
+    if not hud then return nil,nil end
+    for _,label in ipairs(hud:GetDescendants()) do
+        if label:IsA("TextLabel") or label:IsA("TextButton") then
+            local name=(label.Name.." "..(label.Parent and label.Parent.Name or "")):lower()
+            if name:find("health",1,true) or name:find("heart",1,true) or name:match("%f[%a]hp%f[%A]") then
+                local value,maximum=label.Text:gsub(",", ""):match("(%d+%.?%d*)%s*/%s*(%d+%.?%d*)")
+                value,maximum=tonumber(value),tonumber(maximum)
+                if value and maximum and maximum>0 then return value,maximum end
+            end
+        end
+    end
+    return nil,nil
+end
+function Helpers.refreshHealth()
+    local _,_,hum=getChar()
+    local value,maximum
+    if hum then value,maximum=hum.Health,hum.MaxHealth else value,maximum=Helpers.hudHealth() end
+    if not value or not maximum or maximum<=0 then
+        heartLbl.Text="HP  —"; heartLbl.TextColor3=C.muted; return
+    end
+    heartLbl.Text=string.format("HP  %g / %g",math.floor(value*10+.5)/10,math.floor(maximum*10+.5)/10)
+    if checkSafety then checkSafety() end
+    local ratio=math.clamp(value/maximum,0,1)
+    heartLbl.TextColor3=ratio>.75 and C.green or (ratio>.4 and C.warn or Color3.fromRGB(255,115,115))
+end
+function Helpers.bindHealth()
+    local _,_,hum=getChar()
+    if hum~=healthHum then
+        if healthConn then healthConn:Disconnect(); healthConn=nil end
+        if maxHealthConn then maxHealthConn:Disconnect(); maxHealthConn=nil end
+        healthHum=hum
+        if hum then
+            healthConn=hum.HealthChanged:Connect(Helpers.refreshHealth)
+            maxHealthConn=hum:GetPropertyChangedSignal("MaxHealth"):Connect(Helpers.refreshHealth)
+        end
+    end
+    Helpers.refreshHealth()
+end
+local healthCharConn=LocalPlayer.CharacterAdded:Connect(function() task.defer(Helpers.bindHealth) end)
+Helpers.bindHealth()
+local runtimeStart=os.clock()
+function Helpers.formatRuntime(elapsed)
+    local seconds=math.max(0,math.floor(elapsed))
+    return string.format("%02d:%02d:%02d",math.floor(seconds/3600),math.floor(seconds/60)%60,seconds%60)
+end
+local fpsFrames,fpsElapsed=0,0
+local statsConn=RunService.RenderStepped:Connect(function(dt)
+    if not sg.Parent then return end
+    fpsFrames=fpsFrames+1; fpsElapsed=fpsElapsed+dt
+    if fpsElapsed>=.5 then
+        fpsLbl.Text=string.format("FPS  %d",math.floor(fpsFrames/fpsElapsed+.5))
+        runtimeLbl.Text="Runtime  "..Helpers.formatRuntime(os.clock()-runtimeStart)
+        Helpers.bindHealth()
+        fpsFrames=0; fpsElapsed=0
+    end
+end)
+local function setStatus(value) statLbl.Text=value end
+local function addAction(x,w,title,color,fn)
+    local b
+    if x==0 then
+        b=button(primary,title,20,121,238,28,false)
+        b.BackgroundColor3=ink; b.BackgroundTransparency=.91; b.TextColor3=ink
+        local outline=b:FindFirstChildOfClass("UIStroke"); if outline then outline.Color=ink; outline.Transparency=.6 end
+    else
+        b=button(secondary,title,20,98,114,40,false)
+    end
+    b.MouseButton1Click:Connect(fn); return b
+end
+
+-- Portal page shares the same dashboard shell.
+local portalPage=pages.Portal
+text(portalPage,"Trick or Treat",26,22,570,34,26,C.text,Enum.Font.GothamMedium)
+text(portalPage,"Portal access",27,61,570,22,12,C.muted)
+local portalSurface=frame(portalPage,24,109,718,130,C.panel,.6,25); stroke(portalSurface,.85)
+local cdLbl=text(portalSurface,"Countdown: —",22,19,660,32,24)
+local plLbl=text(portalSurface,"Players: —",22,62,660,26,16,C.muted)
+local portalBtn=button(portalPage,"Enter Trick or Treat  ↗",24,266,452,48,true)
+local joinBtn=button(portalPage,"Auto Join: OFF",490,266,252,48,false)
+joinBtn.MouseButton1Click:Connect(function()
+    if Safety.paused then return end
+    S.AutoJoinPortal=not S.AutoJoinPortal
+    joinBtn.Text=S.AutoJoinPortal and "Auto Join: ON" or "Auto Join: OFF"
+end)
+showPage("Overview")
+
+local autoCompleteBtn
+local function refreshToggles()
+    for _,refresh in pairs(refreshList) do refresh() end
+end
+local function resetAutoSeq()
+    AutoSeq.generation=AutoSeq.generation+1
+    AutoSeq.state="farm"; AutoSeq.lastRound=nil; AutoSeq.completedWaves=0
+    AutoSeq.endingStarted=false; AutoSeq.waveSeen=false; AutoSeq.lastEnemyAt=nil
+    AutoSeq.voted=false; AutoSeq.lastVoteAt=-math.huge; AutoSeq.startAttempts=0
+    AutoSeq.voteFiredAt=nil; AutoSeq.voteDeadline=nil; AutoSeq.voteBaseline=nil; AutoSeq.voteConfirmed=false; AutoSeq.voteRound=nil
+    AutoSeq.baseline={}; AutoSeq.finalClearAt=nil; AutoSeq.finalSeen=false
+    AutoSeq.promptAttemptAt=-math.huge; AutoSeq.promptAttempts=0
+    AutoSeq.dialogueSerial=AutoSeq.dialogueSerial or 0
+    AutoSeq.dialogueAt=0; AutoSeq.talkSerial=nil; AutoSeq.soulConfirmed=false
+    AutoSeq.soulPrompt=nil; AutoSeq.soulOwner=nil
+    AutoSeq.endingPhase=nil; AutoSeq.endingPhaseAt=nil; AutoSeq.endingAttempts={}
+    AutoSeq.soulHoldCompleted=false; AutoSeq.giveHoldCompleted=false; AutoSeq.gloveHoldCompleted=false
+    AutoSeq.enteredAt=os.clock(); AutoSeq.reason="Reading game state"
+    AutoSeq.defenseArmedAt=nil; AutoSeq.defenseArmedRound=nil; AutoSeq.waveAccepted=false; AutoSeq.waveRound=nil
+    AutoSeq.gloveAttempted=false; AutoSeq.snapshot=nil; AutoSeq.waveIdleSince=nil; AutoSeq.talkConfirmed=false; AutoSeq.retryRequestedAt=nil
+    AutoSeq.emptyHousePasses=0; AutoSeq.houseRejectReason=nil; AutoSeq.houseRejectCounts={}
+end
+local function stopAuto(message,restore)
+    if releasePromptCamera then releasePromptCamera() end
+    if releaseCombatHold then releaseCombatHold() end
+    if Helpers.releaseEndingHold then Helpers.releaseEndingHold() end
+    Safety.paused=false; Safety.saved=nil; Safety.moved=false
+    S.AutoComplete=false
+    AutoSeq.generation=AutoSeq.generation+1
+    if restore and autoSavedState then
+        for key,value in pairs(autoSavedState) do S[key]=value end
+    else
+        for key in pairs(S) do S[key]=false end
+    end
+    autoSavedState=nil
+    refreshToggles()
+    autoCompleteBtn.Text="AUTO COMPLETE"
+    autoCompleteBtn.TextColor3=ink; autoCompleteBtn.BackgroundColor3=C.purple
+    stageLbl.Text=message or "Stopped"; detailLbl.Text="Houses  /  Deposit  /  Defend Cornifer"
+    joinBtn.Text=S.AutoJoinPortal and "Auto Join: ON" or "Auto Join: OFF"
+    setStatus(message or "auto: stopped")
+end
+autoCompleteBtn=addAction(0,.5,"AUTO COMPLETE",C.purple,function()
+    if Safety.paused then return end
+    if S.AutoComplete then stopAuto("auto: stopped",true); return end
+    autoSavedState={}
+    for key,value in pairs(S) do if key~="AutoComplete" then autoSavedState[key]=value end end
+    resetAutoSeq()
+    S.AutoJoinPortal=false; joinBtn.Text="Auto Join: OFF"
+    S.AutoComplete=true; S.AutoFarmHouses=true; S.AutoDeposit=false
+    S.AutoDefend=false; S.AutoFarm=false; S.AutoSlap=false
+    S.SpeedHack=true; S.Noclip=false
+    refreshToggles()
+    autoCompleteBtn.Text="STOP AUTO"; autoCompleteBtn.TextColor3=ink
+    autoCompleteBtn.BackgroundColor3=C.purple
+    setStatus("auto: farming houses for 2,000 candy")
+end)
+addAction(.5,.5,"STOP ALL",C.danger,function()
+    stopAuto("all stopped",false)
+    resetAutoSeq()
+end)
+local safetyBtn=button(secondary,"Safe Zone",144,98,114,40,false)
+safetyBtn.MouseButton1Click:Connect(function()
+    Safety.enabled=not Safety.enabled
+    if not Safety.enabled and Safety.paused then stopAuto("Safe Zone disabled",false) end
+    safetyBtn.Text=Safety.enabled and "Safe Zone ON" or "Safe Zone"
+    safetyBtn.BackgroundColor3=Safety.enabled and C.purple or C.panel
+    safetyBtn.TextColor3=Safety.enabled and ink or C.text
+    if Safety.enabled and checkSafety then checkSafety() end
+end)
+
+sg.Destroying:Connect(function()
+    S.AutoComplete=false; AutoSeq.generation=AutoSeq.generation+1
+    for key in pairs(S) do S[key]=false end
+end)
+
+
+function Helpers.getTeleportFolder()
+    local a = workspace:FindFirstChild("Arena")
+    if not a then return nil end
+    local h = a:FindFirstChild("Halloween_Decorations")
+    if not h then return nil end
+    local p = h:FindFirstChild("PimsCornMazeEntry")
+    if not p then return nil end
+    local t = p:FindFirstChild("TrickOrTreatTeleport")
+    if t then return t end
+    for _, d in ipairs(a:GetDescendants()) do
+        if d.Name == "TrickOrTreatTeleport" then return d end
+    end
+    return nil
+end
+
+function Helpers.findBasePart(obj)
+    if not obj then return nil end
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Model") then return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true) end
+    return obj:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- Multi-strategy TextLabel.Text getter. Handles:
+--   • SurfaceGui as a direct child (name = "SurfaceGui" or any)
+--   • SurfaceGui nested anywhere under the counter
+--   • SurfaceGui Adornee-linked from PlayerGui / StarterGui
+--   • Fallback: any TextLabel descendant
+function Helpers.findSurfaceTextLabel(container)
+    if not container then return nil end
+
+    -- 1) Direct SurfaceGui child
+    local sGui = container:FindFirstChildOfClass("SurfaceGui")
+    if sGui then
+        local lbl = sGui:FindFirstChildOfClass("TextLabel")
+            or sGui:FindFirstChildWhichIsA("TextLabel", true)
+        if lbl then return lbl end
+    end
+
+    -- 2) Child literally named "SurfaceGui" / "Surface"
+    local named = container:FindFirstChild("SurfaceGui") or container:FindFirstChild("Surface")
+    if named and named:IsA("SurfaceGui") then
+        local lbl = named:FindFirstChildOfClass("TextLabel")
+            or named:FindFirstChildWhichIsA("TextLabel", true)
+        if lbl then return lbl end
+    end
+
+    -- 3) Any SurfaceGui descendant
+    local sGui2 = container:FindFirstChildWhichIsA("SurfaceGui", true)
+    if sGui2 then
+        local lbl = sGui2:FindFirstChildOfClass("TextLabel")
+            or sGui2:FindFirstChildWhichIsA("TextLabel", true)
+        if lbl then return lbl end
+    end
+
+    -- 4) Any TextLabel descendant (last resort)
+    local lbl = container:FindFirstChildWhichIsA("TextLabel", true)
+    if lbl then return lbl end
+
+    return nil
+end
+
+function Helpers.readCounterText(obj)
+    if not obj then return "—" end
+    local lbl = Helpers.findSurfaceTextLabel(obj)
+    if lbl then
+        local t = lbl.Text
+        if t ~= nil and t ~= "" then return t end
+    end
+    return "—"
+end
+
+
+local lastMove={}
+local function moveOnce(key,cf,tolerance)
+    local char,hrp,hum=getChar()
+    if not char or not hrp or not hum or hum.Health<=0 then return false end
+    if lastMove.key==key and lastMove.char==char and (hrp.Position-cf.Position).Magnitude<=(tolerance or 3) then return true end
+    if (hrp.Position-cf.Position).Magnitude<1 then lastMove={key=key,char=char}; return true end
+    char:PivotTo(cf); lastMove={key=key,char=char}
+    return true
+end
+local function joinPortal()
+    if Safety.paused then return false end
+    local folder=Helpers.getTeleportFolder()
+    local part=Helpers.findBasePart(folder and folder:FindFirstChild("Hitbox"))
+    if not part then setStatus("Portal hitbox unavailable"); return false end
+    return moveOnce(part,CFrame.new(part.Position+Vector3.new(0,3,0)),6)
+end
+portalBtn.MouseButton1Click:Connect(joinPortal)
+function Helpers.portalNumbers(countdown,players)
+    local minutes,seconds=countdown:match("(%d+)%s*:%s*(%d+)")
+    local time=minutes and tonumber(minutes)*60+tonumber(seconds) or tonumber(countdown:match("%d+"))
+    return time,tonumber(players:match("%d+"))
+end
+local portalLatch=false
+function Helpers.portalShouldJoin(countdown,players)
+    if countdown~=1 then portalLatch=false end
+    if countdown==1 and players==0 and not portalLatch then return true end
+    return false
+end
+task.spawn(function()
+    local folder,cdLabel,plLabel
+    local refreshAt=-math.huge
+    while sg.Parent do
+        if os.clock()-refreshAt>2 or (folder and not folder.Parent) then
+            folder=Helpers.getTeleportFolder()
+            cdLabel=Helpers.findSurfaceTextLabel(folder and folder:FindFirstChild("Counter"))
+            plLabel=Helpers.findSurfaceTextLabel(folder and folder:FindFirstChild("PlayerCounter"))
+            refreshAt=os.clock()
+        end
+        local cd=cdLabel and cdLabel.Parent and cdLabel.Text or "—"
+        local pl=plLabel and plLabel.Parent and plLabel.Text or "—"
+        cdLbl.Text="Countdown: "..cd; plLbl.Text="Players: "..pl
+        local time,count=Helpers.portalNumbers(cd,pl)
+        local ready=Helpers.portalShouldJoin(time,count)
+        if S.AutoJoinPortal and not Safety.paused and ready then
+            if joinPortal() then portalLatch=true end
+        end
+        task.wait(.2)
+    end
+end)
+
+-- ==================== HELPERS ====================
+local function facePrompt(prompt)
+    local camera=workspace.CurrentCamera
+    if not camera or not prompt or not prompt.Parent then return function() end end
+    local parent=prompt.Parent
+    local pos
+    if parent:IsA("Attachment") then pos=parent.WorldPosition
+    elseif parent:IsA("BasePart") then pos=parent.Position
+    elseif parent:IsA("Model") then
+        local part=parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart",true)
+        pos=part and part.Position
+    end
+    if not pos then return function() end end
+    if releasePromptCamera then releasePromptCamera() end
+    local oldType,oldFrame,oldSubject=camera.CameraType,camera.CFrame,camera.CameraSubject
+    local _,hrp=getChar()
+    local from=hrp and hrp.Position+Vector3.new(0,2.5,0) or pos+Vector3.new(0,2.5,4)
+    local aim=CFrame.lookAt(from,pos)
+    camera.CameraType=Enum.CameraType.Scriptable; camera.CFrame=aim
+    local conn=RunService.RenderStepped:Connect(function()
+        if sg.Parent and workspace.CurrentCamera==camera then camera.CFrame=aim end
+    end)
+    local released=false
+    local function release()
+        if released then return end
+        released=true; conn:Disconnect()
+        pcall(function()
+            camera.CFrame=oldFrame
+            camera.CameraSubject=oldSubject
+            camera.CameraType=oldType
+        end)
+        releasePromptCamera=nil
+    end
+    releasePromptCamera=release
+    return release
+end
+sg.Destroying:Connect(function() if releasePromptCamera then releasePromptCamera() end end)
+local function firePrompt(prompt,valid,manualOnly,aimCamera)
+    local function allowed()
+        if Safety.paused or not sg.Parent or not prompt or not prompt.Parent then return false end
+        if activeAutoToken and not autoAlive() then return false end
+        return not valid or valid()
+    end
+    if not allowed() then return false end
+    local aim=aimCamera~=false
+    local release=aim and facePrompt(prompt) or function() end
+    local began=false
+    local ok,result=pcall(function()
+        if aim then task.wait(.06) end
+        if not allowed() then return false end
+        if not manualOnly and type(fireproximityprompt)=="function" then
+            if pcall(fireproximityprompt,prompt) then return true end
+        end
+        -- Input is attempted even during a local Enabled cooldown. Callers still verify outcomes.
+        prompt:InputHoldBegin(); began=true
+        local deadline=os.clock()+math.max(0,prompt.HoldDuration)+.05
+        while os.clock()<deadline do
+            if not allowed() then return false end
+            task.wait(.03)
+        end
+        return true
+    end)
+    if began then pcall(function() prompt:InputHoldEnd() end) end
+    release()
+    return ok and result==true
+end
+
+-- Reuse the resolved shared prompt/NPC instead of recursively searching on every loop tick.
+Helpers.dropZoneCache={zone=nil,promptScanAt=-math.huge,npcScanAt=-math.huge,promptScans=0,npcScans=0}
+function Helpers.currentDropZone()
+    local cache=Helpers.dropZoneCache
+    local zone=workspace:FindFirstChild("DropZone")
+    if cache.zone~=zone then
+        cache.zone=zone; cache.prompt=nil; cache.npc=nil; cache.anchor=nil; cache.humanoid=nil
+        cache.promptScanAt=-math.huge; cache.npcScanAt=-math.huge; cache.healthScanAt=-math.huge
+    end
+    return cache,zone
+end
+local function findCornifer()
+    local cache,zone=Helpers.currentDropZone()
+    if not zone then return nil,nil end
+    if cache.npc and cache.npc.Parent and cache.anchor and cache.anchor.Parent
+        and cache.anchor:IsDescendantOf(zone) then return cache.npc,cache.anchor end
+    if os.clock()-cache.npcScanAt<.75 then return cache.npc,cache.anchor end
+    cache.npcScanAt=os.clock(); cache.npcScans=cache.npcScans+1
+    local npc=zone:FindFirstChild("NPC")
+    if not npc then cache.npc=nil; cache.anchor=nil; cache.humanoid=nil; return nil,nil end
+    local anchor=npc:FindFirstChild("Face")
+    if not anchor or not anchor:IsA("BasePart") then anchor=npc:FindFirstChild("HumanoidRootPart",true) end
+    if not anchor and npc:IsA("Model") then anchor=npc.PrimaryPart end
+    anchor=anchor or npc:FindFirstChildWhichIsA("BasePart",true)
+    cache.npc=npc; cache.anchor=anchor
+    cache.humanoid=npc:FindFirstChildOfClass("Humanoid") or npc:FindFirstChildWhichIsA("Humanoid",true)
+    return npc,anchor
+end
+local function findDropPrompt()
+    local cache,zone=Helpers.currentDropZone()
+    if not zone then return nil,nil end
+    if cache.prompt and cache.prompt.Parent and cache.prompt:IsDescendantOf(zone) then return cache.prompt,cache.prompt.Parent end
+    if os.clock()-cache.promptScanAt<.75 then return nil,nil end
+    cache.promptScanAt=os.clock(); cache.promptScans=cache.promptScans+1
+    local inner=zone:FindFirstChild("DropZone")
+    local part=inner and inner:FindFirstChild("Part")
+    local prompt=part and (part:FindFirstChildOfClass("ProximityPrompt") or part:FindFirstChildWhichIsA("ProximityPrompt",true))
+    prompt=prompt or (inner and inner:FindFirstChildWhichIsA("ProximityPrompt",true))
+    cache.prompt=prompt
+    return prompt,prompt and prompt.Parent
+end
+
+local function findSoulCandyPrompt()
+    local es = workspace:FindFirstChild("EndSequence")
+    if not es then return nil, nil end
+    local sc = es:FindFirstChild("SoulCandy")
+    if not sc then return nil, nil end
+
+    local m1 = sc:FindFirstChild("Model")
+    local m2 = m1 and m1:FindFirstChild("Model")
+    local mesh = m2 and m2:FindFirstChild("MeshPart")
+    local prompt = mesh and mesh:FindFirstChild("ProximityPrompt")
+    if prompt and prompt:IsA("ProximityPrompt") then return prompt, mesh end
+
+    for _, d in ipairs(sc:GetDescendants()) do
+        if d:IsA("ProximityPrompt") then return d, d.Parent end
+    end
+    return nil, nil
+end
+
+local function findNpcTalkPrompt()
+    local dz = workspace:FindFirstChild("DropZone")
+    if not dz then return nil, nil end
+    local outer = dz:FindFirstChild("NPC")
+    if not outer then return nil, nil end
+    local inner = outer:FindFirstChild("NPC")
+    if inner then
+        local p = inner:FindFirstChild("ProximityPrompt")
+        if p and p:IsA("ProximityPrompt") then return p, inner end
+    end
+    for _, d in ipairs(outer:GetDescendants()) do
+        if d:IsA("ProximityPrompt") and (d.ActionText or ""):lower():find("talk") then
+            return d, d.Parent
+        end
+    end
+    return nil, nil
+end
+
+local function findRevenantGlove()
+    local es = workspace:FindFirstChild("EndSequence")
+    if not es then return nil, nil end
+    local rg = es:FindFirstChild("RevenantGlove")
+    if not rg then return nil, nil end
+    local part
+    if rg:IsA("BasePart") then part = rg
+    else part = rg:FindFirstChildWhichIsA("BasePart", true) end
+    return rg, part
+end
+
+local function findRevenantGlovePrompt()
+    local rg = findRevenantGlove()
+    if not rg then return nil end
+    local direct = rg:FindFirstChild("ProximityPrompt")
+    if direct and direct:IsA("ProximityPrompt") then return direct end
+    return rg:FindFirstChildWhichIsA("ProximityPrompt", true)
+end
+
+local function promptPart(prompt)
+    if not prompt or not prompt.Parent then return nil end
+    local parent=prompt.Parent
+    if parent:IsA("Attachment") then
+        local owner=parent.Parent
+        if owner and owner:IsA("BasePart") then return owner end
+    elseif parent:IsA("BasePart") then return parent
+    elseif parent:IsA("Model") then return parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart",true) end
+    return parent:FindFirstChildWhichIsA("BasePart",true)
+end
+local function promptPosition(prompt)
+    if not prompt or not prompt.Parent then return nil end
+    local parent=prompt.Parent
+    if parent:IsA("Attachment") then return parent.WorldPosition end
+    local part=promptPart(prompt)
+    return part and part.Position
+end
+local function tpToPrompt(prompt,manualOnly,skipMove)
+    local char,_,hum=getChar()
+    if not char or not hum or hum.Health<=0 then return false end
+    if activeAutoToken and not autoAlive() then return false end
+    local position=promptPosition(prompt)
+    if not position then return false end
+    local distance=math.min(3,math.max(.5,(prompt.MaxActivationDistance or 10)*.45))
+    if Safety.paused then return false end
+    if not skipMove then moveOnce(prompt,CFrame.lookAt(position+Vector3.new(0,0,distance),position),math.max(2,distance)) end
+    if not skipMove then task.wait(.1) end
+    if activeAutoToken and not autoAlive() then return false end
+    return firePrompt(prompt,nil,manualOnly,true)
+end
+
+local function getSlapPart(model)
+    for _, p in ipairs(model:GetDescendants()) do
+        if p:IsA("BasePart") and p:GetAttribute("slappable") then return p end
+    end
+    for _, p in ipairs(model:GetDescendants()) do
+        if p:IsA("BasePart") then return p end
+    end
+end
+
+local minionCache={}
+local minionCacheAt=-math.huge
+local function getMinions(force)
+    if force or os.clock()-minionCacheAt>=.5 then
+        local out,seen={},{}
+        local function add(model)
+            if seen[model] or not model:IsA("Model") or not model:IsDescendantOf(workspace) then return end
+            seen[model]=true
+            local hum=model:FindFirstChildOfClass("Humanoid")
+            local hrp=model:FindFirstChild("HumanoidRootPart")
+            if hum and hrp then
+                local corn=model:FindFirstChild("CandyCorn")
+                out[#out+1]={model=model,hum=hum,hrp=hrp,candyCorn=corn,part=corn or getSlapPart(model) or hrp}
+            end
+        end
+        local folder=workspace:FindFirstChild("NPC")
+        if folder then for _,model in ipairs(folder:GetChildren()) do if model.Name=="Minion" then add(model) end end end
+        for _,tag in ipairs({"PatrolNPC","WaveMinion","ChargeNPC"}) do
+            for _,model in ipairs(CollectionService:GetTagged(tag)) do add(model) end
+        end
+        minionCache=out; minionCacheAt=os.clock()
+    end
+    local live={}
+    for _,enemy in ipairs(minionCache) do
+        if enemy.model.Parent and enemy.hrp.Parent and enemy.hum.Parent and enemy.hum.Health>0 then
+            enemy.pos=enemy.hrp.Position; live[#live+1]=enemy
+        end
+    end
+    return live
+end
+
+local function ensureLantern()
+    local char,_,hum = getChar(); if not char or not hum then return nil end
+    local l = char:FindFirstChild("Lantern"); if l then return l end
+    local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+    local lbp = bp and bp:FindFirstChild("Lantern")
+    if lbp then
+        pcall(function() hum:EquipTool(lbp) end)
+        task.wait(0.1)
+        return char:FindFirstChild("Lantern") or lbp
+    end
+end
+
+local function bagMax()
+    local n = #Players:GetPlayers()
+    return ({[1]=2000,[2]=1500,[3]=1000})[n] or 600
+end
+local function roundQuota(r)
+    return ({2000,3000,4999})[r] or 2000
+end
+
+Helpers.houseYields={maximum=0,samples=0,total=0}
+function Helpers.recordHouseYield(before,after,capacity)
+    local amount=after-before
+    if amount>0 and after<capacity then
+        local stats=Helpers.houseYields
+        stats.maximum=math.max(stats.maximum,amount); stats.samples=stats.samples+1; stats.total=stats.total+amount
+    end
+end
+function Helpers.depositDecision(bag,deposited,quota,capacity)
+    local margin=math.min(math.max(Settings.HouseYieldMargin,Helpers.houseYields.maximum),math.max(0,capacity-1))
+    local target=math.max(1,math.min(capacity,math.max(0,quota-deposited)))
+    if bag<=0 then return false,"Bag empty",target end
+    if deposited>=quota then return true,"Empty bag before voting",target end
+    if deposited+bag>=quota then return true,"Bag covers the remaining round quota",target end
+    if bag>=capacity then return true,"Bag full",target end
+    if capacity-bag<margin then return true,"Next expected house yield will not fit",target end
+    return false,"Collecting the remaining candy",target
+end
+
+-- Local hazard names and explicit attributes; decorative ancestor names are ignored.
+function Helpers.hazardMarked(obj)
+    if not obj then return false end
+    local name=obj.Name:lower():gsub("[%s_%-]", "")
+    if name:match("^lava%d*$") or name:match("^killbrick%d*$")
+        or name:match("^killzone%d*$") or name:match("^hazard%d*$") then return true end
+    local node=obj
+    while node and node~=workspace do
+        for _,key in ipairs({"Hazard","KillZone","IsTrap"}) do
+            local value=node:GetAttribute(key)
+            if value==true or (type(value)=="number" and value>0) then return true end
+        end
+        node=node.Parent
+    end
+    return false
+end
+function Helpers.enemiesNear(position,radius,minions)
+    for _,enemy in ipairs(minions or getMinions()) do
+        if (enemy.hrp.Position-position).Magnitude<radius then return true end
+    end
+    return false
+end
+function Helpers.rejectHouse(reason)
+    AutoSeq.houseRejectReason=reason
+    AutoSeq.houseRejectCounts=AutoSeq.houseRejectCounts or {}
+    AutoSeq.houseRejectCounts[reason]=(AutoSeq.houseRejectCounts[reason] or 0)+1
+    return nil,reason
+end
+function Helpers.standSpot(raw,char,hrp,hum,minions,ignoreEnemies,relaxed,ground)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={char}
+    params.IgnoreWater=false
+    params.RespectCanCollide=true
+    local origin=ground and Vector3.new(raw.X,ground.originY,raw.Z) or raw+Vector3.new(0,5,0)
+    local depth=ground and 40 or 12
+    local hit
+    for _=1,(ground and 3 or 1) do
+        hit=workspace:Raycast(origin,Vector3.new(0,-depth,0),params)
+        if not hit then break end
+        if not ground or hit.Position.Y<=ground.maxFloorY then break end
+        -- A roof/awning above the door's floor estimate is not a landing surface.
+        params.FilterDescendantsInstances={char,hit.Instance,table.unpack(ground.skipped or {})}
+        ground.skipped=ground.skipped or {}; ground.skipped[#ground.skipped+1]=hit.Instance
+        local traveled=(origin-hit.Position).Magnitude+.05
+        depth=depth-traveled; origin=hit.Position-Vector3.new(0,.05,0)
+        if depth<=0 then hit=nil; break end
+        hit=nil
+    end
+    if ground then ground.skipped=nil end
+    if not hit then return Helpers.rejectHouse("raycast miss") end
+    if hit.Normal.Y<.65 then return Helpers.rejectHouse("steep surface") end
+    if hit.Material==Enum.Material.Water then return Helpers.rejectHouse("water") end
+    if not hit.Instance.CanCollide then return Helpers.rejectHouse("floor not solid") end
+    if Helpers.hazardMarked(hit.Instance) then return Helpers.rejectHouse("explicit hazard") end
+    local lift=math.max(2.5,hum.HipHeight+hrp.Size.Y*.5)
+    local point=hit.Position+Vector3.new(0,lift+.15,0)
+    if not ignoreEnemies and Helpers.enemiesNear(point,30,minions) then return Helpers.rejectHouse("enemies near retreat") end
+    local overlap=OverlapParams.new()
+    overlap.FilterType=Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances={char}
+    local size=Vector3.new(math.max(1.2,hrp.Size.X*.6),math.max(2,hrp.Size.Y),math.max(1.2,hrp.Size.Z*.6))
+    for _,part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(point),size,overlap)) do
+        if Helpers.hazardMarked(part) then return Helpers.rejectHouse("explicit hazard") end
+        -- Merely overlapping a post, awning or trim does not reject a doorway.
+        -- In strict mode, only the root center being inside a solid block is rejected.
+        if not relaxed and part~=hit.Instance and part.CanCollide
+            and part:IsA("Part") and part.Shape==Enum.PartType.Block then
+            local localPoint=part.CFrame:PointToObjectSpace(point)
+            local half=part.Size*.5
+            if math.abs(localPoint.X)<half.X-.1 and math.abs(localPoint.Y)<half.Y-.1
+                and math.abs(localPoint.Z)<half.Z-.1 then return Helpers.rejectHouse("root inside solid block") end
+        end
+    end
+    return point,nil,hit.Instance
+end
+Helpers.houseSpotSearch=setmetatable({}, {__mode="k"})
+Helpers.houseLandings=setmetatable({}, {__mode="k"})
+function Helpers.resolveDoorPart(prompt)
+    local fallback=promptPart(prompt)
+    local node=prompt.Parent
+    for _=1,5 do
+        if not node or node==workspace then break end
+        for _,name in ipairs({"DoorPanel","DoorPart","FrontDoor","Door"}) do
+            local candidate=node.Name==name and node or node:FindFirstChild(name)
+            local part=candidate and Helpers.findBasePart(candidate)
+            if part then return part,true end
+        end
+        node=node.Parent
+    end
+    return fallback,false
+end
+function Helpers.doorStandSpot(prompt,char,hrp,hum,minions,relaxed)
+    local position=promptPosition(prompt)
+    local part,doorTrusted=Helpers.resolveDoorPart(prompt)
+    if not position or not part then return Helpers.rejectHouse("prompt host missing") end
+    local reach=tonumber(prompt.MaxActivationDistance) or 0
+    if reach<=.2 then return Helpers.rejectHouse("activation range too small") end
+    local cached=Helpers.houseLandings[prompt]
+    if cached and cached.part==part and cached.floor.Parent and cached.floor.CanCollide
+        and (part.Position-cached.partPosition).Magnitude<.5
+        and (cached.floor.Position-cached.floorPosition).Magnitude<.5
+        and math.abs(cached.lift-(hum.HipHeight+hrp.Size.Y*.5))<.25
+        and (cached.point-position).Magnitude<=reach-.05 and not Helpers.hazardMarked(cached.floor) then return cached.point end
+    local cf=part.CFrame
+    local look=Vector3.new(cf.LookVector.X,0,cf.LookVector.Z)
+    if look.Magnitude<.1 then
+        local cross=cf.RightVector:Cross(Vector3.new(0,1,0))
+        look=Vector3.new(cross.X,0,cross.Z)
+    end
+    if look.Magnitude<.1 then look=Vector3.new(hrp.Position.X-part.Position.X,0,hrp.Position.Z-part.Position.Z) end
+    if look.Magnitude<.1 then look=Vector3.new(1,0,0) else look=look.Unit end
+    if (hrp.Position-part.Position):Dot(look)<0 then look=-look end
+    local right=Vector3.new(-look.Z,0,look.X)
+    local feet=hrp.Position.Y-(hum.HipHeight+hrp.Size.Y*.5)
+    local floorEstimate=doorTrusted and part.Position.Y-math.min(part.Size.Y*.5,3) or feet
+    local ground={originY=math.max(part.Position.Y,floorEstimate+2),maxFloorY=floorEstimate+(doorTrusted and 1.5 or 4)}
+    local search=Helpers.houseSpotSearch[prompt]
+    if not search or search.relaxed~=relaxed or search.reach~=reach or (search.position-part.Position).Magnitude>1 then
+        local samples,used={},{}
+        for _,distance in ipairs({math.min(3,reach*.45),math.min(1.5,reach*.25),2.5,3.5,5,7}) do
+            local rounded=math.floor(distance*100+.5)
+            if distance>0 and distance<reach and not used[rounded] then
+                used[rounded]=true
+                for i=0,7 do
+                    local angle=i*math.pi/4
+                    samples[#samples+1]=part.Position+(look*math.cos(angle)+right*math.sin(angle))*distance
+                end
+            end
+        end
+        search={cursor=1,samples=samples,position=part.Position,reach=reach,relaxed=relaxed}
+        Helpers.houseSpotSearch[prompt]=search
+    end
+    local lastReason=search.lastReason or "no usable sample"
+    -- The outward sample usually succeeds on one ground ray. Fallback search stays bounded.
+    for _=1,4 do
+        if search.cursor>#search.samples then search.cursor=1; break end
+        local raw=search.samples[search.cursor]; search.cursor=search.cursor+1
+        local point,reason,floor=Helpers.standSpot(raw,char,hrp,hum,minions,true,relaxed,ground)
+        if point then
+            if (point-position).Magnitude<=reach-.05 then
+                Helpers.houseLandings[prompt]={point=point,part=part,partPosition=part.Position,floor=floor,
+                    floorPosition=floor.Position,lift=hum.HipHeight+hrp.Size.Y*.5}
+                return point
+            end
+            lastReason="outside 3D activation range"; Helpers.rejectHouse(lastReason)
+        else lastReason=reason or "landing rejected" end
+    end
+    search.lastReason=lastReason
+    return nil,lastReason
+end
+
+function Helpers.dropDestination()
+    local char,hrp,hum=getChar()
+    local dz=workspace:FindFirstChild("DropZone")
+    local inner=dz and dz:FindFirstChild("DropZone")
+    local part=inner and inner:FindFirstChild("Part")
+    if not char or not hrp or not hum or not part or not part:IsA("BasePart") then return nil end
+    for _,distance in ipairs({4,6,8}) do
+        for _,direction in ipairs({part.CFrame.LookVector,-part.CFrame.LookVector,part.CFrame.RightVector,-part.CFrame.RightVector}) do
+            local raw=part.Position+direction*distance
+            local point=Helpers.standSpot(raw,char,hrp,hum,{},true)
+            if point then return CFrame.lookAt(point,Vector3.new(part.Position.X,point.Y,part.Position.Z)) end
         end
     end
     return nil
 end
 
-local function slapOnce(char, targetPart)
-    local tool = equipLantern(char)
-    if not tool then return false end
-    local glove = tool:FindFirstChild("Glove")
-    if glove and glove:IsA("BasePart") then
-        glove.Size = Vector3.new(25, 25, 25)
-        glove.Transparency = 1
-        glove.CanCollide = false
+function Helpers.interactDrop(prompt,manualOnly,expectedMode)
+    local function ready()
+        return not Safety.paused and prompt and prompt.Parent and prompt.Enabled
+            and (not expectedMode or Helpers.dropMode(prompt)==expectedMode)
     end
-    tool:Activate()
-    local remote = tool:FindFirstChild("Network")
-    if remote then
-        remote:FireServer("Hit", targetPart)
-        return true
+    if not ready() then return false end
+    local position=promptPosition(prompt)
+    local char,hrp,hum=getChar()
+    if not position or not char or not hrp or not hum or hum.Health<=0 then return false end
+    if (hrp.Position-position).Magnitude>prompt.MaxActivationDistance*.8 then
+        local cf=Helpers.dropDestination()
+        if not cf or (cf.Position-position).Magnitude>prompt.MaxActivationDistance then return false end
+        moveOnce(prompt,cf,prompt.MaxActivationDistance*.7); task.wait(.1)
     end
+    if not ready() then return false end
+    return firePrompt(prompt,ready,manualOnly,true)
+end
+local lastRetreat=-math.huge
+function Helpers.retreatToCornifer(reason)
+    local char,hrp,hum=getChar()
+    if not char or not hrp or not hum or hum.Health<=0 then return false end
+    if os.clock()-lastRetreat<1 then return false end
+    lastRetreat=os.clock()
+    local _,anchor=findCornifer()
+    if not anchor then return false end
+    local minions=getMinions()
+    for _,radius in ipairs({8,18,35,50}) do
+        for i=0,7 do
+            local angle=i*math.pi/4
+            local raw=anchor.Position+Vector3.new(math.cos(angle)*radius,0,math.sin(angle)*radius)
+            local point=Helpers.standSpot(raw,char,hrp,hum,minions)
+            if point then
+                moveOnce("retreat",CFrame.lookAt(point,Vector3.new(anchor.Position.X,point.Y,anchor.Position.Z)),5)
+                AutoSeq.reason=reason or "Retreated to a clear spot near Cornifer"
+                setStatus(AutoSeq.reason)
+                return true
+            end
+        end
+    end
+    AutoSeq.reason="No clear retreat destination found"
+    setStatus(AutoSeq.reason)
     return false
 end
-
-local function isInMainPlace()
-    for _, id in ipairs(MAIN_PLACE_IDS) do
-        if game.PlaceId == id then return true end
+function Helpers.combatReady(hum)
+    if not hum or hum.Health<=0 or Safety.paused then return false end
+    if Safety.enabled and hum.Health<=1 then if checkSafety then checkSafety() end; return false end
+    return true
+end
+local recoveryBusy=false
+checkSafety=function()
+    if recoveryBusy or not sg.Parent then return end
+    local char,hrp,hum=getChar()
+    if not char or not hrp or not hum then return end
+    if not Safety.paused and Safety.enabled and hum.Health>0 and hum.Health<=1 then
+        Safety.saved={}
+        for key,value in pairs(S) do Safety.saved[key]=value; S[key]=false end
+        Safety.paused=true; Safety.moved=false; Safety.char=char; Safety.retryAt=-math.huge
+        AutoSeq.generation=AutoSeq.generation+1
+        if releasePromptCamera then releasePromptCamera() end
+        if releaseCombatHold then releaseCombatHold() end
+        if Helpers.releaseEndingHold then Helpers.releaseEndingHold() end
+        refreshToggles(); autoCompleteBtn.Text="RECOVERING"; joinBtn.Text="Auto Join: PAUSED"
+        AutoSeq.reason="Safe Zone: paused at 1 HP"
     end
-    return false
-end
-
-local function isInObtainmentPlace()
-    for _, id in ipairs(OBTAINMENT_PLACE_IDS) do
-        if game.PlaceId == id then return true end
+    if not Safety.paused then return end
+    recoveryBusy=true
+    if Safety.char~=char then Safety.char=char; Safety.moved=false end
+    if hum.Health>=6 then
+        local saved=Safety.saved or {}
+        Safety.paused=false; Safety.saved=nil; Safety.moved=false
+        AutoSeq.generation=AutoSeq.generation+1
+        for key,value in pairs(saved) do S[key]=value end
+        if S.AutoComplete then S.Noclip=false end
+        refreshToggles(); autoCompleteBtn.Text=S.AutoComplete and "STOP AUTO" or "AUTO COMPLETE"
+        joinBtn.Text=S.AutoJoinPortal and "Auto Join: ON" or "Auto Join: OFF"
+        AutoSeq.reason="Recovered to 6 HP, rechecking objective"
+    elseif hum.Health>0 and not Safety.moved and os.clock()-(Safety.retryAt or -math.huge)>=2 then
+        Safety.retryAt=os.clock()
+        local destination=Helpers.dropDestination()
+        if destination then Safety.moved=moveOnce("recovery",destination,3)
+        else AutoSeq.reason="Safe Zone: waiting for a clear landing at DropZone" end
     end
-    return false
+    if Safety.paused then
+        stageLbl.Text="Safe Zone recovery"
+        detailLbl.Text=Safety.moved and string.format("HP %g / 6. Automation paused at DropZone",hum.Health) or "Automation paused. Waiting for a clear DropZone landing"
+    end
+    recoveryBusy=false
 end
+local safetyElapsed=0
+local safetyConn=RunService.Heartbeat:Connect(function(dt)
+    safetyElapsed=safetyElapsed+dt
+    if safetyElapsed>=.15 then safetyElapsed=0; checkSafety() end
+end)
 
-local function teleportToObtainment()
-    local target = (game.PlaceId == 13497000683) and 106260546437816 or 82340649038345
-    pcall(function()
-        TeleportService:TeleportAsync(target, { LocalPlayer })
-    end)
-end
-
--- ==========================================
--- 📊 STATS OVERLAY
--- ==========================================
-local StatsGui = Instance.new("ScreenGui")
-StatsGui.Name = "RevantStats"
-StatsGui.ResetOnSpawn = false
-StatsGui.IgnoreGuiInset = true
-StatsGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local StatsFrame = Instance.new("Frame")
-StatsFrame.Size = UDim2.new(0, 300, 0, 158)
-StatsFrame.Position = UDim2.new(0, 10, 0, 10)
-StatsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-StatsFrame.BackgroundTransparency = 0.15
-StatsFrame.BorderSizePixel = 0
-StatsFrame.Parent = StatsGui
-
-local StatsCorner = Instance.new("UICorner")
-StatsCorner.CornerRadius = UDim.new(0, 8)
-StatsCorner.Parent = StatsFrame
-
-local StatsStroke = Instance.new("UIStroke")
-StatsStroke.Color = Color3.fromRGB(255, 90, 90)
-StatsStroke.Thickness = 1
-StatsStroke.Transparency = 0.4
-StatsStroke.Parent = StatsFrame
-
-local StatsList = Instance.new("UIListLayout")
-StatsList.Padding = UDim.new(0, 2)
-StatsList.SortOrder = Enum.SortOrder.LayoutOrder
-StatsList.Parent = StatsFrame
-
-local StatsPad = Instance.new("UIPadding")
-StatsPad.PaddingTop = UDim.new(0, 8)
-StatsPad.PaddingLeft = UDim.new(0, 12)
-StatsPad.PaddingRight = UDim.new(0, 8)
-StatsPad.PaddingBottom = UDim.new(0, 8)
-StatsPad.Parent = StatsFrame
-
-local StatsHeader = Instance.new("TextLabel")
-StatsHeader.Size = UDim2.new(1, 0, 0, 20)
-StatsHeader.BackgroundTransparency = 1
-StatsHeader.TextXAlignment = Enum.TextXAlignment.Left
-StatsHeader.TextColor3 = Color3.fromRGB(255, 120, 120)
-StatsHeader.Font = Enum.Font.GothamBold
-StatsHeader.TextSize = 14
-StatsHeader.Text = "REVANT GLOVE FARMER"
-StatsHeader.LayoutOrder = 0
-StatsHeader.Parent = StatsFrame
-
-local StatsAuthor = Instance.new("TextLabel")
-StatsAuthor.Size = UDim2.new(1, 0, 0, 14)
-StatsAuthor.BackgroundTransparency = 1
-StatsAuthor.TextXAlignment = Enum.TextXAlignment.Left
-StatsAuthor.TextColor3 = Color3.fromRGB(180, 180, 180)
-StatsAuthor.Font = Enum.Font.Gotham
-StatsAuthor.TextSize = 11
-StatsAuthor.Text = "made by DerpBot"
-StatsAuthor.LayoutOrder = 1
-StatsAuthor.Parent = StatsFrame
-
-local statLines = {}
-local function makeStat(name, order)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, 0, 0, 15)
-    l.BackgroundTransparency = 1
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextColor3 = Color3.fromRGB(230, 230, 230)
-    l.Font = Enum.Font.Code
-    l.TextSize = 13
-    l.Text = name .. ": ..."
-    l.LayoutOrder = order
-    l.Parent = StatsFrame
-    statLines[name] = l
-end
-
-makeStat("Candy", 2)
-makeStat("Bag", 3)
-makeStat("Wave", 4)
-makeStat("Phase", 5)
-makeStat("FPS", 6)
-makeStat("Time", 7)
-makeStat("Players", 8)
-
+-- ==================== TELEMETRY LOOP ====================
 task.spawn(function()
-    while task.wait(0.2) do
+    while mf.Parent do
+        task.wait(0.25)
         local char = LocalPlayer.Character
         local round = workspace:GetAttribute("Round") or 1
         local deposited = workspace:GetAttribute("DepositedCandy") or 0
-        local myCandy = (char and char:GetAttribute("CollectedCandy")) or 0
-        local quota = ROUND_CANDY[round] or 4999
-        local bagSize = getBagSize()
-
-        local waveDisplay
-        if workspace:GetAttribute("FinalEating") == true then
-            waveDisplay = "FINAL"
-        elseif workspace:GetAttribute("FinalStarted") == true then
-            waveDisplay = "3/3 → FINAL"
-        elseif workspace:GetAttribute("WaveStarted") == true then
-            waveDisplay = round .. "/3 (Defending)"
-        else
-            waveDisplay = round .. "/3"
-        end
-
-        local elapsed = tick() - scriptStartTime
-        local h = math.floor(elapsed / 3600)
-        local m = math.floor((elapsed % 3600) / 60)
-        local s = math.floor(elapsed % 60)
-
-        statLines["Candy"].Text   = string.format("Candy Collected:   %d / %d", deposited, quota)
-        statLines["Bag"].Text     = string.format("Bag:               %d / %d", myCandy, bagSize)
-        statLines["Wave"].Text    = string.format("Wave:              %s", waveDisplay)
-        statLines["Phase"].Text   = string.format("Phase:             %s", currentPhase)
-        statLines["FPS"].Text     = string.format("FPS:               %d", currentFPS)
-        statLines["Time"].Text    = string.format("Time Running:      %02d:%02d:%02d", h, m, s)
-        statLines["Players"].Text = string.format("Players in Server: %d", #Players:GetPlayers())
+        local bag = getBagCount()
+        Helpers.bindHealth()
+        local quota = roundQuota(round)
+        roundLbl.Text = string.format("%s", quota)
+        ringText.Text=tostring(round)
+        local fraction=math.clamp(deposited/quota,0,1)
+        for i,seg in ipairs(ringSegments) do seg.BackgroundTransparency=i<=math.floor(fraction*30) and .02 or .82 end
+        waveCards[1].TargetMetric.Text=tostring(quota)
+        waveCards[2].DepositMetric.Text=tostring(deposited)
+        waveCards[3].WavesMetric.Text=tostring(AutoSeq.completedWaves).." / 3"
+        depLbl.Text=tostring(deposited)
+        bagLbl.Text=tostring(bag)
     end
 end)
 
--- ==========================================
--- 🖥️ RAYFIELD WINDOW
--- ==========================================
-local window = Rayfield:CreateWindow({
-    name = "Revant Glove Farmer",
-    subtitle = "Made by DerpBot",
-    sidebarLayout = true,
-})
-
-local homeTab = window:CreateTab({ name = "Home", icon = 0 })
-local farmTab = window:CreateTab({ name = "Farm", icon = 0 })
-local moveTab = window:CreateTab({ name = "Movement", icon = 0 })
-local actTab  = window:CreateTab({ name = "Actions", icon = 0 })
-
-local autoFarmToggle, autoSkipToggle, noclipToggle, speedToggle, autoToggle
-
-homeTab:CreateSection("Master Control")
-autoToggle = homeTab:CreateToggle({
-    name = "AUTO — Do Everything (Full Auto)",
-    currentValue = false,
-    flag = "Auto",
-    callback = function(value)
-        States.Auto = value
-        States.AutoFarm = value
-        States.AutoSkipDialogue = value
-        States.Noclip = value
-        States.SpeedHack = value
-        pcall(function() if autoFarmToggle then autoFarmToggle:Set(value) end end)
-        pcall(function() if autoSkipToggle then autoSkipToggle:Set(value) end end)
-        pcall(function() if noclipToggle  then noclipToggle:Set(value)  end end)
-        pcall(function() if speedToggle   then speedToggle:Set(value)   end end)
-    end,
-})
-
-homeTab:CreateSection("Status")
-homeTab:CreateParagraph({
-    Title = "Live stats are shown in the top-left overlay",
-    Content = "Candy, Bag, Wave, Phase, FPS, Time, Players.",
-})
-
-farmTab:CreateSection("Farming")
-
-autoFarmToggle = farmTab:CreateToggle({
-    name = "Auto Farm (Full Event Flow)",
-    currentValue = false,
-    flag = "AutoFarm",
-    callback = function(value) States.AutoFarm = value end,
-})
-
-farmTab:CreateToggle({
-    name = "Auto Slap (Nearest Minion)",
-    currentValue = false,
-    flag = "AutoSlap",
-    callback = function(value) States.AutoSlap = value end,
-})
-
-farmTab:CreateSlider({
-    name = "Slap Range",
-    range = { 0, 250 },
-    increment = 1,
-    suffix = " studs",
-    currentValue = 50,
-    flag = "SlapRange",
-    callback = function(value) States.SlapRange = value end,
-})
-
-farmTab:CreateToggle({
-    name = "Defend Cornifier",
-    currentValue = false,
-    flag = "DefendCornifier",
-    callback = function(value) States.DefendCornifier = value end,
-})
-
-autoSkipToggle = farmTab:CreateToggle({
-    name = "Auto Skip / Accept Dialogue",
-    currentValue = false,
-    flag = "AutoSkipDialogue",
-    callback = function(value) States.AutoSkipDialogue = value end,
-})
-
-moveTab:CreateSection("Movement")
-
-noclipToggle = moveTab:CreateToggle({
-    name = "Noclip",
-    currentValue = false,
-    flag = "Noclip",
-    callback = function(value) States.Noclip = value end,
-})
-
-moveTab:CreateToggle({
-    name = "Fly (WASD + Space / LeftShift)",
-    currentValue = false,
-    flag = "Fly",
-    callback = function(value) States.Fly = value end,
-})
-
-moveTab:CreateSlider({
-    name = "Fly Speed",
-    range = { 10, 250 },
-    increment = 1,
-    suffix = " studs/s",
-    currentValue = 50,
-    flag = "FlySpeed",
-    callback = function(value) States.FlySpeed = value end,
-})
-
-speedToggle = moveTab:CreateToggle({
-    name = "Speed Hack",
-    currentValue = false,
-    flag = "SpeedHack",
-    callback = function(value) States.SpeedHack = value end,
-})
-
-moveTab:CreateSlider({
-    name = "WalkSpeed",
-    range = { 16, 300 },
-    increment = 1,
-    currentValue = 60,
-    flag = "WalkSpeed",
-    callback = function(value) States.WalkSpeed = value end,
-})
-
-moveTab:CreateSlider({
-    name = "JumpPower",
-    range = { 50, 300 },
-    increment = 1,
-    currentValue = 100,
-    flag = "JumpPower",
-    callback = function(value) States.JumpPower = value end,
-})
-
-moveTab:CreateToggle({
-    name = "Panic (Void Safe)",
-    currentValue = false,
-    flag = "Panic",
-    callback = function(value) States.Panic = value end,
-})
-
-actTab:CreateSection("Quick Actions")
-
-actTab:CreateButton({
-    name = "Teleport to Count Cornifier",
-    callback = function()
-        local _, cHrp = getCornifier()
-        if cHrp and LocalPlayer.Character then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = cHrp.CFrame * CFrame.new(0, 5, 8)
+-- ==================== DIALOGUE AUTO-ACCEPT ====================
+local dialogueConnections={}
+local dialogueBound=setmetatable({}, {__mode="k"})
+function Helpers.dialogueAutomationActive()
+    return sg.Parent and not Safety.paused and (S.AutoComplete or S.AutoFarmHouses or S.AutoDeposit)
+end
+function Helpers.houseContextLive(ctx)
+    return ctx and ctx.active and ctx.char==LocalPlayer.Character and ctx.generation==AutoSeq.generation
+        and os.clock()<=ctx.hardDeadline and Helpers.dialogueAutomationActive()
+end
+local function bindDialogue(folder)
+    if not folder then return end
+    local show=folder:FindFirstChild("ShowDialogue")
+    local respond=folder:FindFirstChild("ResondToDialogue") or folder:FindFirstChild("RespondToDialogue")
+    if not show or not show:IsA("RemoteEvent") or not respond or not respond:IsA("RemoteEvent") or dialogueBound[show] then return end
+    dialogueBound[show]=true
+    dialogueConnections[#dialogueConnections+1]=show.OnClientEvent:Connect(function(...)
+        if not Helpers.dialogueAutomationActive() then return end
+        local args={...}
+        local options=args[5]
+        if type(options)~="table" then
+            for i=#args,1,-1 do
+                if type(args[i])=="table" then
+                    local value=args[i]
+                    options=value.Options or value.options or value.Choices or value.choices or value
+                    break
+                end
+            end
         end
-    end,
-})
-
-actTab:CreateButton({
-    name = "Join Event (Teleport to Obtainment Place)",
-    callback = function()
-        if isInObtainmentPlace() then return end
-        teleportToObtainment()
-    end,
-})
-
-actTab:CreateButton({
-    name = "Force Respawn (Unstick)",
-    callback = function()
-        local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if Remotes and Remotes:FindFirstChild("RequestRetry") then
-            Remotes.RequestRetry:FireServer()
+        AutoSeq.dialogueSerial=(AutoSeq.dialogueSerial or 0)+1
+        AutoSeq.dialogueAt=os.clock()
+        local reply={remote=respond,options=options,generation=AutoSeq.generation,sent=false}
+        Helpers.endingDialogueReply=reply
+        local ctx=Helpers.activeHouseVisit
+        if Helpers.houseContextLive(ctx) then
+            ctx.dialogueObserved=true; ctx.lastDialogueAt=os.clock(); ctx.phase="dialogue"
+            ctx.deadline=math.min(ctx.hardDeadline,math.max(ctx.deadline,os.clock()+1))
         end
-    end,
-})
+        if type(options)~="table" or not next(options) then return end
+        local generation=AutoSeq.generation
+        task.wait(.1)
+        if not Helpers.dialogueAutomationActive() or generation~=AutoSeq.generation or reply.sent then return end
+        local ok=pcall(function() respond:FireServer(1) end)
+        if ok then reply.sent=true end
+        if ok and Helpers.houseContextLive(ctx) then ctx.responses=(ctx.responses or 0)+1 end
+    end)
+end
+Helpers.dialogueAddedConn=ReplicatedStorage.DescendantAdded:Connect(function(instance)
+    if instance.Name=="ShowDialogue" or instance.Name=="RespondToDialogue" or instance.Name=="ResondToDialogue" then bindDialogue(instance.Parent) end
+end)
+task.spawn(function()
+    local seen=0
+    for _,instance in ipairs(ReplicatedStorage:GetDescendants()) do
+        if instance.Name=="ShowDialogue" then bindDialogue(instance.Parent) end
+        seen=seen+1
+        if seen%500==0 then task.wait() end
+        if not sg.Parent then return end
+    end
+end)
 
-actTab:CreateButton({
-    name = "Rejoin New Public Server",
-    callback = function()
-        local opts = Instance.new("TeleportOptions")
-        opts.ShouldReserveServer = false
-        TeleportService:TeleportAsync(game.PlaceId, { LocalPlayer }, opts)
-    end,
-})
+-- ==================== AUTO RETRY ====================
+local retryRemote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("RequestRetry")
+local lastRetry = 0
+local retryConn=RunService.Heartbeat:Connect(function()
+    if not sg.Parent or not S.AutoComplete or not retryRemote or tick()-lastRetry < 2 then return end
+    local _,_,hum = getChar()
+    if hum and hum.Health <= 0 then
+        lastRetry = tick()
+        pcall(function() retryRemote:FireServer() end)
+        resetAutoSeq()
+        setStatus("retrying: waiting for respawn")
+    end
+end)
 
--- ==========================================
--- 🏃 FAST LOOP
--- ==========================================
-RunService.Heartbeat:Connect(function()
+-- Read the interaction offered by the shared prompt before choosing or firing an action.
+function Helpers.dropMode(prompt)
+    if not prompt or not prompt.Parent then return "missing" end
+    local text=(prompt.ActionText or ""):lower()
+    if text:find("deposit",1,true) or text:find("donate",1,true) then return "deposit" end
+    if text:find("vote",1,true) or text:find("start",1,true) or text:find("begin",1,true) then return "vote" end
+    if text:find("defend",1,true) or text:find("wave in progress",1,true) or text:find("wave active",1,true) then return "combat" end
+    return "unknown"
+end
+function Helpers.candyForDrop(prompt)
+    local bag=getBagCount()
+    local char=LocalPlayer.Character
+    local attribute=char and tonumber(char:GetAttribute("CollectedCandy"))
+    local mode=Helpers.dropMode(prompt)
+    if attribute and ((mode=="vote" and attribute==0) or (mode=="deposit" and attribute>0)) then
+        return attribute,true,"character candy agrees with prompt"
+    end
+    return bag,AutoSeq.bagReadable~=false,"HUD or character candy"
+end
+function Helpers.corniferHealth()
+    local npc=findCornifer()
+    local cache=Helpers.dropZoneCache
+    if cache.humanoid and cache.humanoid.Parent then return cache.humanoid.Health end
+    if npc and os.clock()-(cache.healthScanAt or -math.huge)>=.75 then
+        cache.healthScanAt=os.clock()
+        cache.humanoid=npc:FindFirstChildOfClass("Humanoid") or npc:FindFirstChildWhichIsA("Humanoid",true)
+    end
+    return cache.humanoid and cache.humanoid.Health or nil
+end
+
+-- ==================== DEPOSIT ====================
+local lastDepositFire=0
+local lastDepositConfirmed=0
+local function shouldDeposit()
+    if not LocalPlayer.Character then return false end
+    local bag=Helpers.candyForDrop(findDropPrompt())
+    local round=tonumber(workspace:GetAttribute("Round")) or 1
+    local deposited=tonumber(workspace:GetAttribute("DepositedCandy")) or 0
+    local decision,reason,target=Helpers.depositDecision(bag,deposited,roundQuota(round),bagMax())
+    AutoSeq.depositReason=reason; AutoSeq.bagTarget=target
+    return decision
+end
+
+local function depositBag()
+    local prompt=findDropPrompt()
+    local before=Helpers.candyForDrop(prompt)
+    if before<=0 then AutoSeq.reason="Bag is empty, rechecking collection/vote stage"; return false end
+    if not prompt or not prompt.Parent then AutoSeq.reason="Waiting for shared DropZone prompt"; return false end
+    if not prompt.Enabled then AutoSeq.reason="Deposit prompt disabled, waiting for readiness"; return false end
+    local mode=Helpers.dropMode(prompt)
+    if mode~="deposit" then AutoSeq.reason="Waiting for candy count and DropZone mode to agree ("..mode..")"; return false end
+    if tick()-lastDepositFire<2 then return false end
+    local _,_,hum=getChar()
+    if not hum or hum.Health<=0 then return false end
+    lastDepositFire=tick()
+    Helpers.interactDrop(prompt,math.floor(tick()/3)%2==0,"deposit")
+    local deadline=os.clock()+2.5
+    repeat
+        if activeAutoToken and not autoAlive() then return false end
+        if Helpers.candyForDrop(prompt)<before then lastDepositConfirmed=tick(); return true end
+        task.wait(.1)
+    until os.clock()>=deadline
+    AutoSeq.reason="Deposit unconfirmed, re-reading bag and prompt next tick"
+    return false
+end
+
+function Helpers.enemiesNearCornifer(minions,baseline)
+    local _,anchor=findCornifer()
+    if not anchor then return false end
+    for _,enemy in ipairs(minions or getMinions()) do
+        if enemy.hum.Health>0 and (enemy.pos-anchor.Position).Magnitude<=60
+            and (not baseline or not baseline[enemy.model]) then return true end
+    end
+    return false
+end
+local lastWaveAttempt=-math.huge
+local function startWave()
+    local now=os.clock()
+    if not autoAlive() then return false,"cancelled" end
+    local round=tonumber(workspace:GetAttribute("Round")) or 1
+    if Helpers.candyForDrop(findDropPrompt())>0 then AutoSeq.voteFiredAt=nil; AutoSeq.voteDeadline=nil; return false,"bag not empty" end
+    if AutoSeq.voteFiredAt then
+        if now-AutoSeq.voteFiredAt>=.1 then
+            if round~=AutoSeq.voteRound then return true,"round changed" end
+            if Helpers.enemiesNearCornifer(getMinions(),AutoSeq.voteBaseline) then
+                AutoSeq.voteConfirmed=true; AutoSeq.voted=true
+                return true,"new wave near Cornifer after vote input"
+            end
+        end
+        if now<AutoSeq.voteDeadline then
+            AutoSeq.reason=string.format("Vote sent at %.1f, waiting for wave until %.1f",AutoSeq.voteFiredAt,AutoSeq.voteDeadline)
+            return false,"waiting"
+        end
+        AutoSeq.voteFiredAt=nil; AutoSeq.voteDeadline=nil; AutoSeq.voteBaseline=nil
+        AutoSeq.reason="No wave confirmation after 5 seconds, retrying vote"
+    end
+    local deposited=tonumber(workspace:GetAttribute("DepositedCandy")) or 0
+    if deposited<roundQuota(round) then return false,"quota not met" end
+    local cooldown=3.5-(tick()-math.max(lastDepositFire,lastDepositConfirmed))
+    if cooldown>0 then AutoSeq.reason=string.format("Deposit cooldown: %.1f seconds before voting",cooldown); return false,"cooldown" end
+    if now-lastWaveAttempt<1 then return false,"retry cooldown" end
+    local prompt=findDropPrompt()
+    if not prompt then AutoSeq.reason="Waiting for shared DropZone vote prompt"; return false,"prompt missing" end
+    if not prompt.Enabled then AutoSeq.reason="Vote prompt disabled, waiting for readiness"; return false,"prompt disabled" end
+    local mode=Helpers.dropMode(prompt)
+    if mode~="vote" then AutoSeq.reason="Waiting for Vote/Start mode, prompt says "..mode; return false,"mode mismatch" end
+    -- Refresh before sending so stragglers present before this vote cannot confirm this vote.
+    local baseline={}
+    for _,enemy in ipairs(getMinions(true)) do baseline[enemy.model]=true end
+    lastWaveAttempt=now; AutoSeq.startAttempts=AutoSeq.startAttempts+1
+    local sent=Helpers.interactDrop(prompt,AutoSeq.startAttempts%2==0,"vote")
+    if not autoAlive() then return false,"cancelled" end
+    if not sent then AutoSeq.reason="Vote input failed, retrying at DropZone"; return false,"input failed" end
+    AutoSeq.voteFiredAt=os.clock(); AutoSeq.voteDeadline=AutoSeq.voteFiredAt+5
+    AutoSeq.voteRound=round; AutoSeq.voteBaseline=baseline; AutoSeq.lastVoteAt=AutoSeq.voteFiredAt
+    AutoSeq.defenseArmedAt=AutoSeq.voteFiredAt; AutoSeq.defenseArmedRound=round
+    AutoSeq.votePoolBefore=deposited; AutoSeq.waveAccepted=false; AutoSeq.waveRound=round
+    AutoSeq.reason=string.format("Vote sent at %.1f, waiting for wave until %.1f",AutoSeq.voteFiredAt,AutoSeq.voteDeadline)
+    return false,"sent, awaiting confirmation"
+end
+
+-- ==================== COMBAT ====================
+local lastCombat = 0
+local COMBAT_INTERVAL = 0.08
+local lastActivate = 0
+
+local combatHold={}
+releaseCombatHold=function()
+    if combatHold.align then combatHold.align:Destroy() end
+    if combatHold.attachment then combatHold.attachment:Destroy() end
+    combatHold={}
+end
+function Helpers.positionAbove(target)
+    local char,hrp=getChar()
+    if not char or not hrp then return false end
+    local hit=target.candyCorn or target.part or target.hrp
+    if not hit or not hit.Parent then return false end
+    local point=hit.Position+Vector3.new(0,Settings.HitHeight,0)
+    if combatHold.char~=char or combatHold.target~=target.model then
+        releaseCombatHold()
+        moveOnce(target.model,CFrame.new(point),5)
+        local attachment=Instance.new("Attachment"); attachment.Name="RevantHoverAttachment"; attachment.Parent=hrp
+        local align=Instance.new("AlignPosition"); align.Name="RevantCombatHover"
+        align.Mode=Enum.PositionAlignmentMode.OneAttachment; align.Attachment0=attachment
+        align.MaxForce=1000000; align.Responsiveness=35; align.RigidityEnabled=true
+        align.Position=point; align.Parent=hrp
+        combatHold={char=char,target=target.model,attachment=attachment,align=align}
+    end
+    combatHold.align.Position=point
+    return true
+end
+local function slapTarget(target)
     local char = LocalPlayer.Character
     if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
-
-    -- Auto-master sync
-    if States.Auto then
-        States.AutoFarm = true
-        States.AutoSkipDialogue = true
-        States.Noclip = true
-        States.SpeedHack = true
-    end
-
-    -- Auto HP top-up (prevents dying during defense in Auto)
-    if States.Auto and hum.Health > 0 and hum.Health < hum.MaxHealth then
-        hum.Health = hum.MaxHealth
-    end
-
-    if States.Noclip and hum.Health > 0 then
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
+    local _,_,hum=getChar()
+    if not Helpers.combatReady(hum) then return end
+    if not Helpers.positionAbove(target) then return end
+    local lantern = ensureLantern()
+    if activeAutoToken and not autoAlive() then return end
+    local net = lantern and lantern:FindFirstChild("Network")
+    local slapPart = target.candyCorn or target.part or target.hrp
+    if net and slapPart then
+        pcall(function() net:FireServer("Hit", slapPart) end)
+        if lantern:IsDescendantOf(char) and tick()-lastActivate > 0.15 then
+            lastActivate = tick()
+            pcall(function() lantern:Activate() end)
         end
     end
+end
 
-    -- PANIC
-    if States.Panic and hum.Health > 0 then
-        if PanicCharacter ~= char then
-            PanicCharacter = char
-            PanicCFrame = nil
-        elseif not PanicCFrame then
-            PanicCFrame = hrp.CFrame
-        end
-        hrp.CFrame = CFrame.new(0, 5000, 0)
-        hrp.Anchored = true
-        if hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
-    elseif PanicCharacter then
-        if hrp then
-            hrp.Anchored = false
-            if LocalPlayer.Character == PanicCharacter and PanicCFrame then
-                hrp.CFrame = PanicCFrame
-            end
-        end
-        PanicCharacter = nil
-        PanicCFrame = nil
-    end
+local combatTarget
+local function defendCornifer()
+    local char,hrp,hum = getChar()
+    if not char or not hrp or not hum or hum.Health<=0 then return end
+    if hum.RootPart and hum.RootPart.Anchored then return end
+    if not Helpers.combatReady(hum) then return end
 
-    -- FLY
-    if States.Fly and hum.Health > 0 then
-        hum.PlatformStand = true
-        local bv = hrp:FindFirstChild("FlyBV")
-        if not bv then
-            bv = Instance.new("BodyVelocity")
-            bv.Name = "FlyBV"
-            bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
-            bv.Velocity = Vector3.zero
-            bv.Parent = hrp
+    local _, corniPart = findCornifer()
+    local minions = getMinions()
+
+    local near = {}
+    if corniPart then
+        for _, m in ipairs(minions) do
+            if (m.pos - corniPart.Position).Magnitude <= 60 then table.insert(near, m) end
         end
-        local bg = hrp:FindFirstChild("FlyBG")
-        if not bg then
-            bg = Instance.new("BodyGyro")
-            bg.Name = "FlyBG"
-            bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-            bg.P = 10000
-            bg.D = 500
-            bg.Parent = hrp
-        end
-        local cam = workspace.CurrentCamera
-        local dir = Vector3.zero
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0, 1, 0) end
-        bv.Velocity = dir.Magnitude > 0 and dir.Unit * States.FlySpeed or Vector3.zero
-        bg.CFrame = cam.CFrame
     else
-        local bv = hrp:FindFirstChild("FlyBV")
-        local bg = hrp:FindFirstChild("FlyBG")
-        if bv then bv:Destroy() end
-        if bg then bg:Destroy() end
-        if hum.PlatformStand then
-            hum.PlatformStand = false
-            hum:ChangeState(Enum.HumanoidStateType.Landed)
+        near = minions
+    end
+
+    if #near == 0 then
+        releaseCombatHold(); combatTarget=nil
+        if corniPart then
+            local idle=Helpers.defenseIdle
+            local horizontal=Vector3.new(hrp.Position.X-corniPart.Position.X,0,hrp.Position.Z-corniPart.Position.Z).Magnitude
+            if not idle or idle.char~=char or idle.anchor~=corniPart or horizontal>45 then
+                moveOnce(corniPart,CFrame.new(corniPart.Position + Vector3.new(0,4,0)),8)
+                Helpers.defenseIdle={char=char,anchor=corniPart}
+            end
         end
+        return
     end
+    Helpers.defenseIdle=nil
 
-    if States.SpeedHack then
-        hum.WalkSpeed = States.WalkSpeed
-        hum.JumpPower = States.JumpPower
+    local target, best = nil, math.huge
+    for _,m in ipairs(near) do if m.model==combatTarget then target=m; break end end
+    for _, m in ipairs(near) do
+        local d = (m.pos - hrp.Position).Magnitude
+        if not target or (not combatTarget and d<best) then best=d; target=m end
     end
-end)
+    if target then combatTarget=target.model; slapTarget(target) else combatTarget=nil end
+end
 
--- ==========================================
--- 🎯 AUTO SLAP (individual)
--- ==========================================
-task.spawn(function()
-    while task.wait() do
-        if States.AutoSlap and not (States.AutoFarm or States.Auto) then
-            local char = LocalPlayer.Character
-            if char then
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hrp and hum and hum.Health > 0 and equipLantern(char) then
-                    local closest, shortest = nil, States.SlapRange
-                    for _, tag in ipairs({ "PatrolNPC", "WaveMinion" }) do
-                        for _, npc in ipairs(CollectionService:GetTagged(tag)) do
-                            if npc:IsDescendantOf(workspace) then
-                                local mHum = npc:FindFirstChildOfClass("Humanoid")
-                                local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-                                if mHum and mHum.Health > 0 and mHrp then
-                                    local d = (hrp.Position - mHrp.Position).Magnitude
-                                    if d <= shortest then closest, shortest = mHrp, d end
-                                end
-                            end
-                        end
-                    end
-                    if closest then
-                        hrp.CFrame = closest.CFrame * CFrame.new(0, 10, 0)
-                        task.wait(0.05)
-                        slapOnce(char, closest)
-                        task.wait(0.35)
-                        slapOnce(char, closest)
-                        task.wait(0.5)
-                    end
+-- ==================== FARM HOUSES ====================
+local lastHouseFarm=-math.huge
+local houseBusy=false
+local houseAttempts=setmetatable({}, {__mode="k"})
+local unsafeHouses=setmetatable({}, {__mode="k"})
+local houseIndex={}
+local houseIndexAt=-math.huge
+function Helpers.houseCollected(owner)
+    return owner and owner:GetAttribute("WasCollected")==true
+end
+function Helpers.houseOwner(prompt,fallback)
+    local map=workspace:FindFirstChild("HalloweenMap")
+    local houses=map and map:FindFirstChild("Houses")
+    local node=prompt.Parent
+    while houses and node and node~=houses do
+        if node.Parent==houses then return node end
+        node=node.Parent
+    end
+    return fallback or prompt.Parent
+end
+function Helpers.houseAvailable(prompt,owner)
+    if not prompt or not prompt.Parent or not prompt.Enabled or not prompt:IsDescendantOf(workspace) or unsafeHouses[owner] then return false end
+    local node=prompt
+    while node and node~=workspace do
+        if Helpers.houseCollected(node) or node:GetAttribute("Enabled")==false then return false end
+        if node==owner then break end
+        node=node.Parent
+    end
+    return true
+end
+function Helpers.houseCandidates(char,hrp,hum)
+    if os.clock()-houseIndexAt>=5 then
+        local entries,seen={},{}
+        local function add(prompt,fallback)
+            if seen[prompt] then return end
+            seen[prompt]=true
+            entries[#entries+1]={prompt=prompt,owner=Helpers.houseOwner(prompt,fallback)}
+        end
+        for _,door in ipairs(CollectionService:GetTagged("Door")) do
+            if door:IsDescendantOf(workspace) then
+                for _,prompt in ipairs(door:GetDescendants()) do if prompt:IsA("ProximityPrompt") then add(prompt,door) end end
+            end
+        end
+        local map=workspace:FindFirstChild("HalloweenMap")
+        local houses=map and map:FindFirstChild("Houses")
+        if houses then
+            for _,prompt in ipairs(houses:GetDescendants()) do if prompt:IsA("ProximityPrompt") then add(prompt,prompt.Parent) end end
+        end
+        houseIndex=entries; houseIndexAt=os.clock()
+    end
+    local candidates={}
+    local minions=getMinions()
+    local counts={total=#houseIndex,ready=0,cooldown=0,unavailable=0,hazard=0,enemies=0,blocked=0}
+    for _,entry in ipairs(houseIndex) do
+        local prompt,owner=entry.prompt,entry.owner
+        local attempt=houseAttempts[prompt]
+        if attempt and attempt.exhaustedRound==(tonumber(workspace:GetAttribute("Round")) or 1) then counts.unavailable=counts.unavailable+1
+        elseif unsafeHouses[owner] or (attempt and attempt.unsafe) then counts.blocked=counts.blocked+1
+        elseif not Helpers.houseAvailable(prompt,owner) then counts.unavailable=counts.unavailable+1
+        elseif attempt and os.clock()<attempt.nextTry then counts.cooldown=counts.cooldown+1
+        elseif Helpers.hazardMarked(prompt) then counts.hazard=counts.hazard+1
+        else
+            local position=promptPosition(prompt)
+            if position then
+                if Helpers.enemiesNear(position,12,minions) then counts.enemies=counts.enemies+1
+                else
+                    counts.ready=counts.ready+1
+                    candidates[#candidates+1]={prompt=prompt,owner=owner,pos=position,attempt=attempt,
+                        score=(position-hrp.Position).Magnitude+(attempt and attempt.failures*40 or 0)}
                 end
-            end
+            else counts.unavailable=counts.unavailable+1 end
         end
     end
-end)
-
--- ==========================================
--- 🛡️ DEFEND CORNIFIER (individual)
--- ==========================================
-task.spawn(function()
-    while task.wait() do
-        if States.DefendCornifier and not (States.AutoFarm or States.Auto) then
-            local char = LocalPlayer.Character
-            if char then
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hrp and hum and hum.Health > 0 and equipLantern(char) then
-                    local _, cHrp = getCornifier()
-                    if cHrp then
-                        local target, minDist = nil, 80
-                        for _, tag in ipairs({ "PatrolNPC", "WaveMinion" }) do
-                            for _, npc in ipairs(CollectionService:GetTagged(tag)) do
-                                if npc:IsDescendantOf(workspace) then
-                                    local mHum = npc:FindFirstChildOfClass("Humanoid")
-                                    local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-                                    if mHum and mHum.Health > 0 and mHrp then
-                                        local d = (mHrp.Position - cHrp.Position).Magnitude
-                                        if d <= minDist then target, minDist = mHrp, d end
-                                    end
-                                end
-                            end
-                        end
-                        if target then
-                            hrp.CFrame = target.CFrame * CFrame.new(0, 10, 0)
-                            task.wait(0.05)
-                            slapOnce(char, target)
-                            task.wait(0.35)
-                            slapOnce(char, target)
-                            task.wait(0.5)
-                            hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
-                        else
-                            hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
-                            task.wait(0.5)
-                        end
-                    end
-                end
+    AutoSeq.houseCounts=counts
+    table.sort(candidates,function(a,b) return a.score<b.score end)
+    return candidates
+end
+function Helpers.recordHouseFailure(prompt,reason)
+    local record=houseAttempts[prompt] or {failures=0,nextTry=0}
+    record.failures=math.min((record.failures or 0)+1,8)
+    record.nextTry=os.clock()+math.min(30,3*2^(record.failures-1))
+    record.reason=reason
+    houseAttempts[prompt]=record
+    return record
+end
+function Helpers.houseWaitReason()
+    local counts=AutoSeq.houseCounts or {}
+    local reason=AutoSeq.houseRejectReason
+    if (counts.ready or 0)==0 then
+        if (counts.enemies or 0)>0 then reason="enemies within 12 studs"
+        elseif (counts.cooldown or 0)>0 then reason=(AutoSeq.houseRejectReason or "door validation").." (retry cooldown)"
+        elseif (counts.hazard or 0)>0 then reason="explicit hazard markers"
+        elseif (counts.unavailable or 0)>0 then reason="collected or disabled doors"
+        elseif (counts.total or 0)==0 then reason="house prompts not loaded" end
+    end
+    return string.format("House wait: %s | ready %d, cooldown %d, unavailable %d",
+        reason or "checking doorways",counts.ready or 0,counts.cooldown or 0,counts.unavailable or 0)
+end
+function Helpers.visitPromptCandidate(prompt,ctx)
+    if not prompt or prompt==ctx.door or not prompt.Parent or not prompt:IsA("ProximityPrompt")
+        or not prompt:IsDescendantOf(workspace) then return false end
+    local position=promptPosition(prompt)
+    if not position or (position-ctx.position).Magnitude>10 then return false end
+    local own=ctx.owner.Parent and prompt:IsDescendantOf(ctx.owner)
+    local model=prompt:FindFirstAncestorOfClass("Model")
+    local humanoid=model and model:FindFirstChildOfClass("Humanoid")
+    if model==ctx.char or (model and Players:GetPlayerFromCharacter(model)) then return false end
+    local text=((prompt.ActionText or "").." "..(prompt.ObjectText or "")):lower()
+    local talk=text:find("talk",1,true) or text:find("candy",1,true) or text:find("collect",1,true)
+        or text:find("take",1,true) or text:find("treat",1,true)
+    return (own and (talk or humanoid~=nil)) or (humanoid and humanoid.Health>0 and (ctx.initial[prompt]~=true))
+end
+function Helpers.queueVisitPrompt(prompt,ctx)
+    if Helpers.visitPromptCandidate(prompt,ctx) and not ctx.queued[prompt] then
+        ctx.queued[prompt]=true; ctx.prompts[#ctx.prompts+1]=prompt
+    end
+end
+function Helpers.scanVisitPrompts(ctx,baseline)
+    local seen={}
+    local function add(prompt)
+        if seen[prompt] then return end
+        seen[prompt]=true
+        if baseline then ctx.initial[prompt]=prompt.Enabled else Helpers.queueVisitPrompt(prompt,ctx) end
+    end
+    if baseline and ctx.owner.Parent then
+        ctx.ownerPrompts={}
+        for _,instance in ipairs(ctx.owner:GetDescendants()) do
+            if instance:IsA("ProximityPrompt") then
+                ctx.ownerPrompts[#ctx.ownerPrompts+1]=instance; add(instance)
+                if #ctx.ownerPrompts>=128 then break end
             end
         end
+    elseif ctx.ownerPrompts then
+        for _,prompt in ipairs(ctx.ownerPrompts) do if prompt.Parent then add(prompt) end end
     end
-end)
-
--- ==========================================
--- 💬 DIALOGUE AUTO-RESPOND
--- ==========================================
-task.spawn(function()
-    while task.wait(0.4) do
-        if not (States.AutoFarm or States.AutoSkipDialogue or States.Auto) then continue end
-        if workspace:GetAttribute("DialogueOpen") ~= true then continue end
-        if tick() - lastDialogueFire < 0.9 then continue end
-        lastDialogueFire = tick()
-        local remotes = getDialogueRemotes()
-        if remotes then
-            local respond = remotes:FindFirstChild("ResondToDialogue")
-            if respond then pcall(function() respond:FireServer(1) end) end
-            local voteSkip = remotes:FindFirstChild("VoteSkip")
-            if voteSkip then pcall(function() voteSkip:FireServer() end) end
+    local params=OverlapParams.new(); params.FilterType=Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances={ctx.char}
+    local parts=workspace:GetPartBoundsInRadius(ctx.position,10,params)
+    local models={}
+    for i=1,math.min(#parts,64) do
+        local part=parts[i]
+        for _,instance in ipairs(part:GetChildren()) do if instance:IsA("ProximityPrompt") then add(instance)
+            elseif instance:IsA("Attachment") then
+                for _,child in ipairs(instance:GetChildren()) do if child:IsA("ProximityPrompt") then add(child) end end
+            end
+        end
+        local model=part:FindFirstAncestorOfClass("Model")
+        if model and not models[model] and model:FindFirstChildOfClass("Humanoid") then
+            models[model]=true
+            for _,instance in ipairs(model:GetDescendants()) do if instance:IsA("ProximityPrompt") then add(instance) end end
         end
     end
+end
+Helpers.housePromptAddedConn=workspace.DescendantAdded:Connect(function(instance)
+    local ctx=Helpers.activeHouseVisit
+    if Helpers.houseContextLive(ctx) and instance:IsA("ProximityPrompt") then Helpers.queueVisitPrompt(instance,ctx) end
 end)
-
--- ==========================================
--- 🌾 FARM ACTION HELPERS
--- ==========================================
-local function depositCandy(hrp)
-    local dropZone = workspace:FindFirstChild("DropZone")
-    if not dropZone then return false end
-    for _, p in ipairs(dropZone:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.Enabled then
-            local parent = p.Parent
-            local target
-            if parent:IsA("BasePart") then
-                target = parent
-            elseif parent:IsA("Model") then
-                target = parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart")
+function Helpers.serviceVisitPrompt(ctx,valid)
+    if ctx.dialogueObserved and os.clock()-(ctx.lastDialogueAt or 0)<1.25 then return end
+    for _,prompt in ipairs(ctx.prompts) do
+        local record=ctx.promptAttempts[prompt]
+        if prompt.Parent and prompt.Enabled and Helpers.visitPromptCandidate(prompt,ctx)
+            and (not record or (record.count<2 and os.clock()-record.at>=1)) then
+            local char,hrp,hum=getChar()
+            local position=promptPosition(prompt)
+            if not char or not hrp or not hum or not position or not valid() then return end
+            ctx.promptAttempts[prompt]={count=record and record.count or 0,at=os.clock()}
+            if (hrp.Position-position).Magnitude>prompt.MaxActivationDistance then
+                local point=Helpers.doorStandSpot(prompt,char,hrp,hum,getMinions(),false)
+                if not point then ctx.phase="npc_out_of_range"; return end
+                moveOnce(prompt,CFrame.lookAt(point,Vector3.new(position.X,point.Y,position.Z)),2)
             end
-            if target then
-                hrp.CFrame = target.CFrame * CFrame.new(0, 3, 0)
-                task.wait(0.3)
-                triggerPrompt(p)
-                task.wait(1.2)
+            ctx.phase="npc_prompt"; ctx.npcObserved=true
+            ctx.promptAttempts[prompt]={count=record and record.count+1 or 1,at=os.clock()}
+            ctx.deadline=math.min(ctx.hardDeadline,math.max(ctx.deadline,os.clock()+1.25))
+            firePrompt(prompt,valid,false,true)
+            return
+        end
+    end
+end
+
+local function farmOneHouse()
+    if Safety.paused or houseBusy or tick()-lastHouseFarm<.3 then return "cooldown" end
+    local char,hrp,hum=getChar()
+    if not char or not hrp or not hum or hum.Health<=0 or hrp.Anchored then return "blocked" end
+    local generation=AutoSeq.generation
+    local automatic=S.AutoComplete
+    local visitRound=tonumber(workspace:GetAttribute("Round")) or 1
+    local function running()
+        if Safety.paused or not sg.Parent or AutoSeq.generation~=generation or LocalPlayer.Character~=char or hum.Health<=0 then return false end
+        if (tonumber(workspace:GetAttribute("Round")) or 1)~=visitRound then return false end
+        local health=automatic and Helpers.corniferHealth() or nil
+        if health and health<=0 then return false end
+        if automatic then return autoAlive() and AutoSeq.state=="farm" end
+        return S.AutoFarmHouses and not S.AutoComplete
+    end
+    if not running() then return "blocked" end
+    local chosen
+    local candidates=Helpers.houseCandidates(char,hrp,hum)
+    local minions=getMinions()
+    -- At most two candidate geometries per attempt, stopping on the first valid landing.
+    for i=1,math.min(2,#candidates) do
+        local candidate=candidates[i]
+        local relaxed=(AutoSeq.emptyHousePasses or 0)>=2
+        local point,reason=Helpers.doorStandSpot(candidate.prompt,char,hrp,hum,minions,relaxed)
+        if point then candidate.stand=point; chosen=candidate; break end
+        Helpers.recordHouseFailure(candidate.prompt,reason or "no landing")
+    end
+    if not chosen then
+        AutoSeq.emptyHousePasses=(AutoSeq.emptyHousePasses or 0)+1
+        AutoSeq.reason=Helpers.houseWaitReason(); setStatus(AutoSeq.reason)
+        lastHouseFarm=tick()+.7
+        return "none"
+    end
+    AutoSeq.emptyHousePasses=0
+    houseBusy=true
+    local baselineHP=hum.Health
+    local unsafe=false
+    local damageConn,contactConn
+    local arrived=false
+    local hazardContactAt=-math.huge
+    local function abortUnsafe(reason,temporary,duration)
+        if unsafe then return end
+        unsafe=true
+        if not temporary then unsafeHouses[chosen.owner]=true end
+        local record=houseAttempts[chosen.prompt] or {failures=0,nextTry=0}
+        record.unsafe=not temporary; record.nextTry=temporary and os.clock()+(duration or 10) or math.huge
+        houseAttempts[chosen.prompt]=record
+        if not Safety.paused then Helpers.retreatToCornifer(reason) end
+    end
+    local function damageCheck()
+        if baselineHP-hum.Health<math.min(20,hum.MaxHealth/3) then return false end
+        if not arrived then AutoSeq.reason="Damage before house arrival, retry paused"; return true end
+        local marked=Helpers.hazardMarked(chosen.prompt) or os.clock()-hazardContactAt<=2
+        if marked then abortUnsafe("Retreat: hazard contact at this house",false)
+        else abortUnsafe("Retreat: damage source unconfirmed, door paused for 60 seconds",true,60) end
+        return true
+    end
+    local function valid()
+        if not running() or unsafe then return false end
+        return not damageCheck()
+    end
+    local ok,result=pcall(function()
+        if hrp.Touched then
+            contactConn=hrp.Touched:Connect(function(part)
+                if arrived and Helpers.hazardMarked(part) then hazardContactAt=os.clock() end
+            end)
+        end
+        damageConn=hum.HealthChanged:Connect(function()
+            if Safety.enabled and hum.Health<=1 and checkSafety then checkSafety() end
+            damageCheck()
+        end)
+        local prompt,owner=chosen.prompt,chosen.owner
+        local beforeBag=getBagCount()
+        local beforeAttribute=tonumber(char:GetAttribute("CollectedCandy")) or 0
+        local position=promptPosition(prompt)
+        if not position then return "retry" end
+        local ctx={active=true,char=char,generation=generation,door=prompt,owner=owner,position=position,
+            initial={},queued={},prompts={},promptAttempts={},startedAt=os.clock(),deadline=os.clock()+2.5,
+            hardDeadline=os.clock()+5,dialogueObserved=false,responses=0,phase="positioning",beforeBag=beforeBag}
+        Helpers.activeHouseVisit=ctx
+        local record=houseAttempts[prompt] or {failures=0,nextTry=0}
+        record.pending=true; record.phase=ctx.phase; houseAttempts[prompt]=record
+        Helpers.scanVisitPrompts(ctx,true)
+        local yieldRecorded=false
+        local baselineAmount=math.max(beforeBag,beforeAttribute)
+        local function confirmed()
+            if not ctx.knocked then return false end
+            local after=math.max(getBagCount(),tonumber(char:GetAttribute("CollectedCandy")) or 0)
+            if after>baselineAmount then
+                if not yieldRecorded then Helpers.recordHouseYield(baselineAmount,after,bagMax()); yieldRecorded=true end
+                ctx.phase="confirmed"; ctx.confirmedAt=os.clock(); record.confirmedAt=ctx.confirmedAt
                 return true
             end
-            break
+            return false
         end
+        local function waitSafe(seconds)
+            local untilTime=os.clock()+seconds
+            repeat
+                if not valid() then return false end
+                if Helpers.enemiesNear(hrp.Position,12) then abortUnsafe("Retreat: enemies appeared at this house",true); return false end
+                if confirmed() then return true end
+                task.wait(.05)
+            until os.clock()>=untilTime
+            return valid()
+        end
+        local function doorNearby()
+            local pos=promptPosition(prompt)
+            return valid() and pos and (hrp.Position-pos).Magnitude<=prompt.MaxActivationDistance
+        end
+        local point=chosen.stand
+        moveOnce(prompt,CFrame.lookAt(point,Vector3.new(position.X,point.Y,position.Z)),2)
+        arrived=true
+        if not waitSafe(.05) then return unsafe and "unsafe" or "blocked" end
+        ctx.phase="knock"; ctx.knocked=true; record.phase=ctx.phase
+        firePrompt(prompt,doorNearby,false,false)
+        ctx.startedAt=os.clock(); ctx.deadline=os.clock()+2.5; ctx.hardDeadline=os.clock()+5
+        local nextScan=0
+        local assisted=false
+        while os.clock()<ctx.deadline do
+            if not valid() then return unsafe and "unsafe" or "blocked" end
+            if confirmed() then return "ok" end
+            if os.clock()>=nextScan then
+                Helpers.scanVisitPrompts(ctx,false); nextScan=os.clock()+.25
+            end
+            Helpers.serviceVisitPrompt(ctx,valid)
+            if not valid() then return unsafe and "unsafe" or "blocked" end
+            if confirmed() then return "ok" end
+            -- A second knock is only attempted if no NPC or dialogue has responded.
+            if not assisted and os.clock()-ctx.startedAt>=.8 and not ctx.dialogueObserved and not ctx.npcObserved
+                and prompt.Parent and prompt.Enabled then
+                assisted=true; ctx.phase="knock_retry"
+                firePrompt(prompt,doorNearby,false,true)
+            end
+            record.phase=ctx.phase
+            AutoSeq.reason=string.format("House pending: %s | NPC %s | dialogue %s",ctx.phase,
+                ctx.npcObserved and "seen" or "waiting",ctx.dialogueObserved and "seen" or "waiting")
+            if not waitSafe(.05) then return unsafe and "unsafe" or "blocked" end
+        end
+        -- Keep ownership of a delayed bag update briefly before starting a different house.
+        ctx.phase="reward_settle"
+        local settleUntil=math.min(ctx.hardDeadline,os.clock()+1)
+        while os.clock()<settleUntil do
+            if not valid() then return unsafe and "unsafe" or "blocked" end
+            if confirmed() then return "ok" end
+            if not waitSafe(.05) then return unsafe and "unsafe" or "blocked" end
+        end
+        if confirmed() then return "ok" end
+        local consumed=not prompt.Parent or not owner.Parent or Helpers.houseCollected(owner)
+        record.dialogueObserved=ctx.dialogueObserved; record.npcObserved=ctx.npcObserved
+        if consumed then
+            record.exhaustedRound=tonumber(workspace:GetAttribute("Round")) or 1
+            return "consumed_no_reward"
+        end
+        return ctx.dialogueObserved and "dialogue_no_reward" or "retry"
+    end)
+    local ctx=Helpers.activeHouseVisit
+    if ctx and ctx.door==chosen.prompt then ctx.active=false; Helpers.activeHouseVisit=nil end
+    local pendingRecord=houseAttempts[chosen.prompt]
+    if pendingRecord then pendingRecord.pending=false end
+    if damageConn then damageConn:Disconnect() end
+    if contactConn then contactConn:Disconnect() end
+    houseBusy=false; lastHouseFarm=tick()
+    local record=houseAttempts[chosen.prompt] or {failures=0,nextTry=0}
+    if unsafe then
+        if record.unsafe then record.nextTry=math.huge end
+        AutoSeq.reason=record.unsafe and "Confirmed hazard blocked for this session" or "Door paused temporarily after damage or nearby enemy"
+    elseif ok and result=="ok" then
+        record.failures=0; record.nextTry=os.clock()+2
+        setStatus("houses: candy collected")
+    elseif ok and result=="blocked" then record.nextTry=os.clock()+1
+    elseif ok and result=="consumed_no_reward" then
+        record.nextTry=os.clock()+2
+        AutoSeq.reason="House consumed without confirmed candy, skipped for this round"; setStatus(AutoSeq.reason)
+    elseif ok and result=="dialogue_no_reward" then
+        record.nextTry=os.clock()+15
+        AutoSeq.reason="Dialogue observed, reward unconfirmed; door paused for 15 seconds"; setStatus(AutoSeq.reason)
+    else
+        record.failures=math.min(record.failures+1,5)
+        record.nextTry=os.clock()+60
+        setStatus("No house interaction/reward confirmation, door paused for 60 seconds")
+    end
+    houseAttempts[chosen.prompt]=record
+    return unsafe and "unsafe" or (ok and result or "retry")
+end
+
+-- ==================== AUTO COMPLETE SEQUENCE ====================
+local lastAuto=0
+local AUTO_INTERVAL=.08
+local function setAutoStage(stage,reason)
+    local changed=AutoSeq.state~=stage
+    if changed then
+        if stage~="startwave" and stage~="defend" then AutoSeq.voteFiredAt=nil; AutoSeq.voteDeadline=nil; AutoSeq.voteBaseline=nil end
+        local previous=AutoSeq.state
+        AutoSeq.state=stage; AutoSeq.enteredAt=os.clock()
+        AutoSeq.promptAttemptAt=-math.huge; AutoSeq.promptAttempts=0
+        traceAuto(previous.." -> "..stage..": "..(reason or "game state changed"))
+    elseif reason then
+        AutoSeq.reason=reason
+    end
+    local farming=stage=="farm"
+    local defending=stage=="defend" or stage=="defend2"
+    if changed and not defending and releaseCombatHold then releaseCombatHold() end
+    local refresh=changed or S.AutoFarmHouses~=farming or S.AutoDeposit~=(stage=="deposit") or S.AutoDefend~=defending or S.Noclip
+    S.AutoFarmHouses=farming; S.AutoDeposit=stage=="deposit"; S.AutoDefend=defending
+    S.Noclip=false
+    if refresh then refreshToggles() end
+end
+function Helpers.rememberEnemies(minions)
+    local baseline={}
+    for _,m in ipairs(minions) do baseline[m.model]=true end
+    AutoSeq.baseline=baseline
+end
+function Helpers.newEnemies(minions)
+    for _,m in ipairs(minions) do
+        if not (AutoSeq.baseline or {})[m.model] then return true end
     end
     return false
 end
-
-local function talkToCornifier(char, hrp)
-    local model, cHrp = getCornifier()
-    if not (model and cHrp) then return false end
-    if (hrp.Position - cHrp.Position).Magnitude > 12 then
-        hrp.CFrame = cHrp.CFrame * CFrame.new(0, 3, 8)
-        task.wait(0.3)
-    end
-    for _, p in ipairs(model:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.Enabled then
-            triggerPrompt(p)
-            task.wait(0.5)
-            return true
-        end
+local function beginEnding(reason)
+    AutoSeq.completedWaves=3; AutoSeq.endingStarted=true
+    setAutoStage("soulcandy",reason or "Round three completed")
+end
+function Helpers.dialogueObserved()
+    return AutoSeq.talkSerial~=nil and (AutoSeq.dialogueSerial or 0)>AutoSeq.talkSerial
+end
+function Helpers.promptConsumed(prompt,owner)
+    if not owner or not owner.Parent or not prompt or not prompt.Parent then return true end
+    for _,obj in ipairs({owner,prompt}) do
+        if obj:GetAttribute("WasCollected")==true or obj:GetAttribute("Collected")==true then return true end
     end
     return false
 end
+function Helpers.tryEndingPrompt(prompt)
+    if not prompt or not prompt.Parent or not prompt.Enabled or os.clock()-AutoSeq.promptAttemptAt<3 then return end
+    AutoSeq.promptAttemptAt=os.clock()
+    AutoSeq.promptAttempts=AutoSeq.promptAttempts+1
+    tpToPrompt(prompt,AutoSeq.promptAttempts%2==0)
+end
+-- Ending interactions hold position for the full prompt duration, then release all temporary controls.
+function Helpers.releaseEndingHold()
+    local hold=Helpers.endingHold
+    if not hold or hold.released then return end
+    hold.released=true
+    if hold.began then pcall(function() hold.prompt:InputHoldEnd() end) end
+    if hold.align then hold.align:Destroy() end
+    if hold.attachment then hold.attachment:Destroy() end
+    if hold.humanoid and hold.humanoid.Parent then pcall(function() hold.humanoid.AutoRotate=hold.autoRotate end) end
+    if hold.cameraRelease then hold.cameraRelease() end
+    if Helpers.endingHold==hold then Helpers.endingHold=nil end
+end
+function Helpers.holdEndingPrompt(prompt,phase)
+    local char,hrp,hum=getChar()
+    local generation=AutoSeq.generation
+    if not char or not hrp or not hum or hum.Health<=0 or not prompt or not prompt.Parent or not prompt.Enabled then return false,"prompt not ready" end
+    local position=promptPosition(prompt)
+    if not position then return false,"prompt position missing" end
+    if releaseCombatHold then releaseCombatHold() end
+    Helpers.releaseEndingHold()
+    local hold={prompt=prompt,humanoid=hum,autoRotate=hum.AutoRotate,began=false}
+    Helpers.endingHold=hold
+    local function alive()
+        return sg.Parent and not Safety.paused and S.AutoComplete and AutoSeq.generation==generation
+            and LocalPlayer.Character==char and hum.Health>0 and AutoSeq.endingPhase==phase and not hold.released
+    end
+    local ok,result=pcall(function()
+        local reach=math.max(.5,prompt.MaxActivationDistance)
+        local offset=Vector3.new(hrp.Position.X-position.X,0,hrp.Position.Z-position.Z)
+        if offset.Magnitude<.1 then offset=Vector3.new(0,0,1) else offset=offset.Unit end
+        offset=offset*math.min(2.5,reach*.4)
+        local target=position+offset
+        local standing=Helpers.standSpot(target,char,hrp,hum,{},true,true)
+        if standing and (standing-position).Magnitude<=reach-.1 then target=standing end
+        local relativeOffset=target-position
+        moveOnce(prompt,CFrame.lookAt(target,Vector3.new(position.X,target.Y,position.Z)),1)
+        hrp.AssemblyLinearVelocity=Vector3.new(0,0,0); hrp.AssemblyAngularVelocity=Vector3.new(0,0,0)
+        hum.AutoRotate=false
+        hold.attachment=Instance.new("Attachment"); hold.attachment.Name="RevantEndingHoldAttachment"; hold.attachment.Parent=hrp
+        hold.align=Instance.new("AlignPosition"); hold.align.Name="RevantEndingHold"
+        hold.align.Mode=Enum.PositionAlignmentMode.OneAttachment; hold.align.Attachment0=hold.attachment
+        hold.align.MaxForce=1000000; hold.align.Responsiveness=60; hold.align.RigidityEnabled=true
+        hold.align.Position=target; hold.align.Parent=hrp
+        hold.cameraRelease=facePrompt(prompt)
+        task.wait(.1)
+        if not alive() then return false end
+        local duration=math.max(0,prompt.HoldDuration or 0)+.15
+        local native=pcall(function() prompt:InputHoldBegin(); hold.began=true end)
+        local untilTime=os.clock()+duration
+        while os.clock()<untilTime do
+            if not alive() then return false end
+            if not prompt.Parent then return true end
+            local updated=promptPosition(prompt)
+            if updated then hold.align.Position=updated+relativeOffset end
+            AutoSeq.reason=string.format("Holding %s: %.1f seconds remaining",phase,math.max(0,untilTime-os.clock()))
+            task.wait(.03)
+        end
+        if not alive() then return false end
+        if not native then
+            if type(fireproximityprompt)~="function" then return false end
+            return pcall(fireproximityprompt,prompt)
+        end
+        return true
+    end)
+    Helpers.releaseEndingHold()
+    return ok and result==true,ok and "hold finished" or tostring(result)
+end
+function Helpers.dialogueButtonVisible(button)
+    if not button or not button.Parent or not button.Active then return false end
+    local node=button
+    while node and node~=PlayerGui do
+        if node:IsA("GuiObject") and not node.Visible then return false end
+        if node:IsA("ScreenGui") and not node.Enabled then return false end
+        node=node.Parent
+    end
+    return true
+end
+function Helpers.findDialogueSkip()
+    local cache=Helpers.dialogueSkipCache
+    if not cache or os.clock()-cache.at>=1 then
+        cache={at=os.clock(),buttons={}}
+        for _,instance in ipairs(PlayerGui:GetDescendants()) do
+            if instance:IsA("GuiButton") then
+                local label=instance.Name
+                if instance:IsA("TextButton") then label=label.." "..instance.Text end
+                local child=instance:FindFirstChildWhichIsA("TextLabel",true)
+                if child then label=label.." "..child.Text end
+                label=label:lower():gsub("[%s_%-]", "")
+                local node,scoped=instance.Parent,false
+                while node and node~=PlayerGui do
+                    local name=node.Name:lower()
+                    if name:find("dialog",1,true) or name:find("conversation",1,true) then scoped=true; break end
+                    node=node.Parent
+                end
+                if label:find("skipdialog",1,true) or (scoped and (label:find("skip",1,true) or label:find("continue",1,true) or label:find("next",1,true))) then
+                    cache.buttons[#cache.buttons+1]=instance
+                end
+            end
+        end
+        Helpers.dialogueSkipCache=cache
+    end
+    for _,button in ipairs(cache.buttons) do if Helpers.dialogueButtonVisible(button) then return button end end
+end
+function Helpers.skipEndingDialogue()
+    local reply=Helpers.endingDialogueReply
+    if reply and not reply.sent and reply.generation==AutoSeq.generation and type(reply.options)=="table" and next(reply.options) then
+        reply.sent=pcall(function() reply.remote:FireServer(1) end)
+    end
+    local button=Helpers.findDialogueSkip()
+    if button and os.clock()-(Helpers.dialogueSkipAt or -math.huge)>=.35 then
+        Helpers.dialogueSkipAt=os.clock()
+        local activated=false
+        if type(firesignal)=="function" then
+            activated=pcall(function() firesignal(button.MouseButton1Click); firesignal(button.Activated) end)
+        end
+        if not activated then
+            pcall(function()
+                local input=game:GetService("VirtualInputManager")
+                local center=button.AbsolutePosition+button.AbsoluteSize*.5
+                input:SendMouseButtonEvent(center.X,center.Y,0,true,game,0)
+                input:SendMouseButtonEvent(center.X,center.Y,0,false,game,0)
+            end)
+        end
+    end
+    return button~=nil or os.clock()-(AutoSeq.dialogueAt or 0)<.4
+end
+function Helpers.advanceEnding(phase,reason)
+    AutoSeq.endingPhase=phase; AutoSeq.endingPhaseAt=os.clock(); AutoSeq.reason=reason
+end
+function Helpers.endingHoldAction(prompt,phase,nextPhase)
+    if not prompt or not prompt.Parent or not prompt.Enabled then AutoSeq.reason="Waiting for "..phase.." prompt readiness"; return end
+    AutoSeq.endingAttempts=AutoSeq.endingAttempts or {}
+    local attempts=AutoSeq.endingAttempts[phase] or 0
+    if attempts>=2 then AutoSeq.reason="Hold unconfirmed for "..phase.."; automation is paused at this step"; return end
+    if os.clock()-(AutoSeq.lastEndingAttempt or -math.huge)<1 then return end
+    local ledger=AutoSeq.endingAttempts
+    AutoSeq.lastEndingAttempt=os.clock(); ledger[phase]=attempts+1
+    local held=Helpers.holdEndingPrompt(prompt,phase)
+    if not autoAlive() or AutoSeq.endingPhase~=phase then
+        if AutoSeq.endingAttempts==ledger and AutoSeq.endingPhase==phase then ledger[phase]=attempts end
+        return
+    end
+    if held then
+        if phase=="soul" then AutoSeq.soulHoldCompleted=true; AutoSeq.soulConfirmed=true
+        elseif phase=="give" then AutoSeq.giveHoldCompleted=true; AutoSeq.giveHoldAt=os.clock(); AutoSeq.talkConfirmed=true
+        elseif phase=="glove" then AutoSeq.gloveHoldCompleted=true; AutoSeq.gloveAttempted=true; AutoSeq.gloveHoldAt=os.clock() end
+        Helpers.advanceEnding(nextPhase,"Completed "..phase.." hold; advancing once")
+    else AutoSeq.reason="Hold cancelled or failed for "..phase.."; waiting before retry" end
+end
 
-local function farmCandies(char, hrp)
-    if not equipLantern(char) then task.wait(0.5); return end
-
-    local target, minDist = nil, 250
-    for _, npc in ipairs(CollectionService:GetTagged("PatrolNPC")) do
-        if npc:IsDescendantOf(workspace) and npc:GetAttribute("IsAnomalySpawn") ~= true then
-            local mHum = npc:FindFirstChildOfClass("Humanoid")
-            local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-            if mHum and mHum.Health > 0 and mHrp then
-                local d = (mHrp.Position - hrp.Position).Magnitude
-                if d < minDist then target, minDist = mHrp, d end
+function Helpers.findCorniferGivePrompt()
+    local npc=findCornifer()
+    if not npc then return nil end
+    local cache=Helpers.givePromptCache
+    if cache and cache.npc==npc and cache.prompt and cache.prompt.Parent and os.clock()-cache.at<.5 then return cache.prompt end
+    local chosen
+    for _,instance in ipairs(npc:GetDescendants()) do
+        if instance:IsA("ProximityPrompt") then
+            local text=(instance.ActionText or ""):lower()
+            if text:find("give",1,true) or text:find("deliver",1,true) or text:find("hand over",1,true) then
+                if not chosen or instance.Enabled then chosen=instance end
+                if instance.Enabled then break end
             end
         end
     end
+    chosen=chosen or findNpcTalkPrompt()
+    Helpers.givePromptCache={npc=npc,prompt=chosen,at=os.clock()}
+    return chosen
+end
 
-    if target then
-        hrp.CFrame = target.CFrame * CFrame.new(0, 10, 0)
-        task.wait(0.05)
-        slapOnce(char, target)
-        task.wait(0.35)
-        slapOnce(char, target)
-        task.wait(0.4)
+function Helpers.readGameSnapshot()
+    local drop=findDropPrompt()
+    local bag,readable,bagSource=Helpers.candyForDrop(drop)
+    local round=tonumber(workspace:GetAttribute("Round"))
+    local deposited=tonumber(workspace:GetAttribute("DepositedCandy"))
+    local npc,anchor=findCornifer()
+    local minions=getMinions()
+    local near,newNear,incomingNew=0,0,0
+    for _,enemy in ipairs(minions) do
+        if anchor and enemy.hum.Health>0 then
+            local distance=(enemy.pos-anchor.Position).Magnitude
+            local new=not (AutoSeq.voteBaseline or {})[enemy.model]
+            if distance<=60 then near=near+1; if new then newNear=newNear+1 end end
+            if new and distance<=160 then incomingNew=incomingNew+1 end
+        end
+    end
+    local soul,soulOwner=findSoulCandyPrompt()
+    local talk=AutoSeq.endingPhase=="give" and Helpers.findCorniferGivePrompt() or findNpcTalkPrompt()
+    local glove=findRevenantGlovePrompt()
+    local char=LocalPlayer.Character
+    local backpack=LocalPlayer:FindFirstChildOfClass("Backpack")
+    local owned=(char and char:FindFirstChild("Revenant")) or (backpack and backpack:FindFirstChild("Revenant"))
+    local quota=roundQuota(round or 1)
+    local decision,reason,target=Helpers.depositDecision(bag,deposited or 0,quota,bagMax())
+    local soulConsumed=AutoSeq.soulPrompt and AutoSeq.promptAttempts>0
+        and Helpers.promptConsumed(AutoSeq.soulPrompt,AutoSeq.soulOwner) or false
+    if not soulConsumed and AutoSeq.soulPrompt and AutoSeq.promptAttempts>0 and AutoSeq.soulWasReady
+        and AutoSeq.soulPrompt.Parent and not AutoSeq.soulPrompt.Enabled
+        and not AutoSeq.soulTalkWasEnabled and talk and talk.Enabled then soulConsumed=true end
+    return {round=round or 1,roundKnown=round~=nil,deposited=deposited or 0,poolKnown=deposited~=nil,
+        quota=quota,bag=bag,bagReadable=readable,bagSource=bagSource,capacity=bagMax(),
+        shouldDeposit=decision,depositReason=reason,bagTarget=target,
+        drop=drop,dropMode=Helpers.dropMode(drop),dropReady=drop and drop.Parent and drop.Enabled or false,
+        dropZoneExists=workspace:FindFirstChild("DropZone")~=nil,corniferHP=Helpers.corniferHealth(),
+        near=near,newNear=newNear,incomingNew=incomingNew,minions=minions,soul=soul,soulOwner=soulOwner,
+        soulReady=soul and soul.Parent and soul.Enabled or false,soulConsumed=soulConsumed,
+        talk=talk,talkReady=talk and talk.Parent and talk.Enabled or false,
+        glove=glove,gloveReady=glove and glove.Parent and glove.Enabled or false,
+        rewardOwned=owned~=nil,dialogueObserved=Helpers.dialogueObserved()}
+end
+-- Pure stage projection from the current observations plus explicitly timed interaction memory.
+function Helpers.deriveStage(g,m,now)
+    if g.rewardOwned or (m.gloveAttempted and not g.dropZoneExists) then return "done","Reward/lobby confirmed" end
+    if m.endingPhase then
+        if g.corniferHP and g.corniferHP<=0 and m.endingPhase~="glove" and m.endingPhase~="exit" then return "failed","Cornifer defeated during ending" end
+        local phase=m.endingPhase
+        if phase=="preskip" then return "end_skip_before","Skipping dialogue before SoulCandy pickup" end
+        if phase=="soul" then return "soulcandy","Collecting SoulCandy with a full stationary hold" end
+        if phase=="give" then return "give","Giving SoulCandy to Cornifer with a full hold" end
+        if phase=="postskip" then return "end_skip_after","Skipping Cornifer dialogue after giving SoulCandy" end
+        if phase=="defend" then
+            if g.gloveReady and g.near==0 then return "glove","Final field clear and glove prompt ready" end
+            return "defend2",g.near>0 and "Defending Cornifer after SoulCandy delivery" or "Waiting at Cornifer for final enemies/glove"
+        end
+        if phase=="glove" then return "glove","Collecting the final glove" end
+        if phase=="exit" then return "exit","Glove hold finished, waiting for lobby/reward confirmation" end
+    end
+    if g.gloveReady and (g.round>=3 or m.endingStarted) then return "glove","Glove prompt is ready" end
+    if m.gloveAttempted and not g.gloveReady then return "glove","Glove input attempted, waiting for reward or lobby confirmation" end
+    if g.soulReady and g.round>=3 then return "soulcandy","SoulCandy prompt is ready" end
+    if g.corniferHP and g.corniferHP<=0 then return "failed","Cornifer defeated, waiting for retry" end
+    if m.endingStarted or g.round>=4 or m.soulConfirmed then
+        if not (m.soulConfirmed or g.soulConsumed or (g.round>=4 and g.talkReady)) then
+            return "soulcandy","Waiting for SoulCandy readiness or collection evidence"
+        end
+        if m.talkConfirmed or g.dialogueObserved then
+            if now-(m.dialogueAt or 0)<2.5 then return "talkwait","Dialogue active, waiting for quiet" end
+            return "defend2",g.near>0 and "Final enemies near Cornifer" or "Final field clear, waiting for glove readiness"
+        end
+        return "talk",g.talkReady and "Cornifer talk prompt ready" or "Waiting for talk readiness or dialogue event"
+    end
+    if not g.roundKnown or not g.poolKnown or not g.bagReadable or not g.dropZoneExists then
+        return "sync","Waiting for round, pool, bag and DropZone observations"
+    end
+    if m.defenseArmedAt and m.defenseArmedRound==g.round then
+        local accepted=m.waveAccepted or g.dropMode=="combat"
+            or (g.incomingNew or 0)>0 or g.deposited<(m.votePoolBefore or g.deposited)
+        if accepted or g.near>0 then return "defend","Protecting Cornifer while the voted wave spawns/approaches" end
+        if now-m.defenseArmedAt<8 then return "defend","Vote input sent, preparing at Cornifer for wave spawn" end
+        if g.dropReady and g.dropMode=="vote" and g.deposited>=g.quota then
+            return "startwave","No wave evidence, Vote prompt ready again; retrying from Cornifer"
+        end
+        return "defend","Waiting at Cornifer for the game to finish starting the wave"
+    end
+    local postVote=m.voteFiredAt and now-m.voteFiredAt>=.1 and g.newNear>0
+    if g.dropMode=="combat" or (g.near>0 and (m.voteConfirmed or postVote)) then
+        return "defend",g.dropMode=="combat" and "DropZone reports combat" or "Post-vote enemies near Cornifer"
+    end
+    if m.state=="defend" and m.waveRound==g.round and g.near==0 and m.waveIdleSince and now-m.waveIdleSince<3 then
+        return "defend","No nearby enemies, allowing a 3-second spawn gap"
+    end
+    if g.bag>0 then
+        if g.dropMode=="vote" then return "sync","Bag and Vote prompt disagree, waiting for candy synchronization" end
+        if g.shouldDeposit then
+            return "deposit",g.dropReady and g.dropMode=="deposit" and g.depositReason or "Deposit needed, waiting for enabled Deposit mode"
+        end
+        return "farm",string.format("Candy %d / %d for this trip",g.bag,g.bagTarget)
+    end
+    if g.deposited<g.quota then
+        if m.voteFiredAt and now<(m.voteDeadline or 0) then return "startwave","Vote pending, pool changed while awaiting wave" end
+        return "farm","Bag empty and more deposited candy needed"
+    end
+    if g.dropMode=="deposit" then return "sync","Bag is empty but prompt still says Deposit, waiting for synchronization" end
+    return "startwave",g.dropReady and g.dropMode=="vote" and "Bag empty, quota met, Vote prompt ready" or "Quota met, waiting for enabled Vote/Start mode"
+end
+local function runAutoSequence()
+    if not autoAlive() then return end
+    local now=os.clock()
+    local g=Helpers.readGameSnapshot()
+    AutoSeq.snapshot=g
+    if not AutoSeq.endingStarted and g.roundKnown then
+        if AutoSeq.lastRound and g.round<AutoSeq.lastRound then resetAutoSeq(); activeAutoToken=AutoSeq.generation end
+        if AutoSeq.lastRound==nil or g.round~=AutoSeq.lastRound then
+            AutoSeq.lastRound=g.round; AutoSeq.waveSeen=false; AutoSeq.waveIdleSince=nil
+            AutoSeq.defenseArmedAt=nil; AutoSeq.defenseArmedRound=nil; AutoSeq.waveAccepted=false; AutoSeq.waveRound=nil
+            AutoSeq.voteFiredAt=nil; AutoSeq.voteDeadline=nil; AutoSeq.voteBaseline=nil; AutoSeq.voteConfirmed=false
+            AutoSeq.startAttempts=0; AutoSeq.emptyHousePasses=0
+        end
+        AutoSeq.completedWaves=math.clamp(g.round-1,0,3)
+    end
+    if AutoSeq.state=="defend" and g.near==0 then AutoSeq.waveIdleSince=AutoSeq.waveIdleSince or now
+    elseif g.near>0 then AutoSeq.waveIdleSince=nil end
+    if g.soulConsumed then AutoSeq.soulConfirmed=true end
+    if g.dialogueObserved and AutoSeq.endingStarted then AutoSeq.talkConfirmed=true end
+    if AutoSeq.defenseArmedRound==g.round and AutoSeq.defenseArmedAt then
+        if g.dropMode=="combat" or (g.incomingNew or 0)>0
+            or g.deposited<(AutoSeq.votePoolBefore or g.deposited) then AutoSeq.waveAccepted=true end
+    end
+    if not AutoSeq.endingPhase and (AutoSeq.endingStarted or g.round>=4 or (g.round>=3 and (g.soulReady or g.gloveReady))) then
+        AutoSeq.endingStarted=true; AutoSeq.completedWaves=3
+        Helpers.advanceEnding(g.gloveReady and not g.soulReady and "glove" or "preskip","Starting ordered ending sequence")
+    end
+    local stage,reason=Helpers.deriveStage(g,AutoSeq,now)
+    if stage=="done" then stopAuto("Sequence finished",false); return end
+    if stage=="soulcandy" or stage=="talk" or stage=="talkwait" or stage=="defend2" or stage=="glove" or stage=="give" or stage=="end_skip_before" or stage=="end_skip_after" or stage=="exit" then
+        AutoSeq.endingStarted=true; AutoSeq.completedWaves=3
+    end
+    if stage=="defend" then
+        AutoSeq.waveRound=g.round
+        if g.near>0 then AutoSeq.waveSeen=true; AutoSeq.lastEnemyAt=now end
+        if AutoSeq.waveAccepted or g.dropMode=="combat" or (AutoSeq.voteFiredAt and g.newNear>0) then AutoSeq.voteConfirmed=true end
+    end
+    if AutoSeq.state=="defend" and stage~="defend" then AutoSeq.voteConfirmed=false; AutoSeq.waveSeen=false end
+    setAutoStage(stage,reason)
+    if stage=="sync" then return end
+    if stage=="failed" then
+        if retryRemote and now-(AutoSeq.retryRequestedAt or -math.huge)>=3 then
+            AutoSeq.retryRequestedAt=now; pcall(function() retryRemote:FireServer() end)
+        end
+        return
+    end
+    if stage=="farm" then
+        -- Recheck the collection threshold before every new house, never halfway into the next reward.
+        if g.shouldDeposit and g.bag>0 then return end
+        local result=farmOneHouse()
+        if not autoAlive() then return end
+        if result=="none" then AutoSeq.reason=Helpers.houseWaitReason() end
+    elseif stage=="deposit" then
+        depositBag()
+    elseif stage=="startwave" then
+        local confirmed,why=startWave()
+        if not autoAlive() then return end
+        if confirmed and why~="round changed" then AutoSeq.voteConfirmed=true; AutoSeq.waveAccepted=true end
+        if (confirmed or why=="sent, awaiting confirmation") and why~="round changed"
+            and AutoSeq.defenseArmedRound==g.round and AutoSeq.defenseArmedAt then
+            setAutoStage("defend","Vote input sent, moving to Cornifer to defend")
+            defendCornifer()
+        end
+    elseif stage=="defend" or stage=="defend2" then
+        -- Standing at Cornifer during the spawn gap is part of the defense action.
+        defendCornifer()
+    elseif stage=="end_skip_before" then
+        local busy=Helpers.skipEndingDialogue()
+        if not busy and now-(AutoSeq.endingPhaseAt or now)>=.5 then Helpers.advanceEnding("soul","Dialogue clear, picking up SoulCandy") end
+    elseif stage=="soulcandy" then
+        Helpers.endingHoldAction(g.soul,"soul","give")
+    elseif stage=="give" then
+        if AutoSeq.talkSerial==nil then AutoSeq.talkSerial=AutoSeq.dialogueSerial or 0 end
+        Helpers.endingHoldAction(g.talk,"give","postskip")
+    elseif stage=="end_skip_after" then
+        local busy=Helpers.skipEndingDialogue()
+        if g.near>0 then defendCornifer() end
+        if not busy and now-math.max(AutoSeq.endingPhaseAt or now,AutoSeq.dialogueAt or 0)>=2.5 then
+            Helpers.advanceEnding("defend","Dialogue complete, defending Cornifer")
+        end
+    elseif stage=="glove" then
+        if AutoSeq.endingPhase=="defend" then Helpers.advanceEnding("glove","Final wave finished, moving to glove") end
+        Helpers.endingHoldAction(g.glove,"glove","exit")
+    elseif stage=="exit" then
+        if now-(AutoSeq.gloveHoldAt or now)>=5 and (AutoSeq.endingAttempts.glove or 0)<2 and g.gloveReady then
+            Helpers.advanceEnding("glove","Exit not yet confirmed, retrying glove once")
+        end
+    end
+end
+
+-- Always show the state and its observed inputs, including waits and retries.
+task.spawn(function()
+    local names={farm="Farming houses",deposit="Depositing candy",startwave="Waiting for wave",
+        defend="Defending Cornifer",soulcandy="Collecting SoulCandy",talk="Starting dialogue",
+        talkwait="Waiting for dialogue",defend2="Final encounter",glove="Collecting glove",
+        sync="Synchronizing game state",failed="Run failed",give="Giving SoulCandy to Cornifer",
+        end_skip_before="Skipping dialogue",end_skip_after="Skipping Cornifer dialogue",exit="Waiting for lobby"}
+    while sg.Parent do
+        if Safety.paused then
+            local _,_,hum=getChar()
+            stageLbl.Text="Safe Zone recovery"
+            detailLbl.Text=not hum and "Waiting for character" or (Safety.moved and string.format("HP %g / 6. Automation paused at DropZone",hum.Health) or "Automation paused. Waiting for a clear DropZone landing")
+        elseif S.AutoComplete then
+            local round=tonumber(workspace:GetAttribute("Round")) or 1
+            local quota=roundQuota(round)
+            local deposited=tonumber(workspace:GetAttribute("DepositedCandy")) or 0
+            stageLbl.Text=names[AutoSeq.state] or AutoSeq.state
+            detailLbl.Text=AutoSeq.reason or "Reading game state"
+            local g=AutoSeq.snapshot
+            statLbl.Text=g and string.format("R%d | %d/%d | bag %d | DZ %s%s | NPC %s | near %d",g.round,g.deposited,g.quota,
+                g.bag,g.dropMode,g.dropReady and " ready" or " wait",g.corniferHP and tostring(g.corniferHP) or "?",g.near)
+                or "Reading game observations"
+            progressFill.Size=UDim2.fromScale(math.clamp(deposited/quota,0,1),1)
+        end
+        if S.AutoFarmHouses and not S.AutoComplete and not Safety.paused then
+            stageLbl.Text="Farming houses"; detailLbl.Text=AutoSeq.reason or "Checking doorways"
+        end
+        for i,pill in ipairs(waveLabels) do
+            local done=i<=AutoSeq.completedWaves
+            pill.Text=done and ("WAVE "..i.."  ✓") or ("WAVE "..i)
+            pill.TextColor3=done and C.purple or C.muted
+            waveCards[i].BackgroundColor3=done and Color3.fromRGB(123,126,111) or Color3.fromRGB(62,62,58)
+            waveCards[i].BackgroundTransparency=done and .38 or .6
+        end
+        task.wait(.25)
+    end
+end)
+
+-- ==================== MAIN LOOP ====================
+local function runMainTick()
+    if not mf.Parent or Safety.paused then return end
+
+    local char,hrp,hum = getChar()
+    if not char or not hrp or not hum or hum.Health<=0 then return end
+
+    if hrp.Position.Y < -100 then
+        local _,c = findCornifer()
+        if c then char:PivotTo(CFrame.new(c.Position + Vector3.new(0, 6, 0))) end
         return
     end
 
-    for _, door in ipairs(CollectionService:GetTagged("Door")) do
-        if door:IsDescendantOf(workspace)
-            and door:GetAttribute("Enabled") == true
-            and door:GetAttribute("WasCollected") ~= true
-            and door:GetAttribute("Open") ~= true
-            and door:GetAttribute("IsAnomaly") ~= true then
-            local prompt = door:FindFirstChild("ProximityPrompt", true)
-            if prompt and prompt.Enabled then
-                local doorPart = prompt.Parent
-                if doorPart and doorPart:IsA("BasePart") then
-                    hrp.CFrame = doorPart.CFrame * CFrame.new(0, 3, 0)
-                    task.wait(0.2)
-                    triggerPrompt(prompt)
-                    local t0 = tick()
-                    while tick() - t0 < 6 do
-                        if workspace:GetAttribute("DialogueOpen") == true then break end
-                        task.wait(0.1)
-                    end
-                    local t1 = tick()
-                    while tick() - t1 < 5 do
-                        if workspace:GetAttribute("DialogueOpen") ~= true then break end
-                        task.wait(0.2)
-                    end
-                    task.wait(0.4)
-                    return
-                end
-            end
-        end
+    if S.AutoComplete then
+        if tick()-lastAuto < Settings.LoopDelay then return end
+        lastAuto = tick()
+        activeAutoToken=AutoSeq.generation
+        runAutoSequence()
+        return
     end
 
-    task.wait(0.8)
-end
+    if tick()-lastCombat < COMBAT_INTERVAL then return end
+    lastCombat = tick()
 
-local function defendWave(char, hrp)
-    local _, cHrp = getCornifier()
-    if not cHrp then task.wait(0.4); return end
-    if not equipLantern(char) then task.wait(0.3); return end
+    if not (S.AutoFarm or S.AutoDefend or S.AutoSlap) and releaseCombatHold then releaseCombatHold() end
+    if S.AutoDeposit and shouldDeposit() then
+        depositBag(); return
+    end
+    if S.AutoFarmHouses then farmOneHouse() end
 
-    local target, minDist = nil, math.huge
-    for _, npc in ipairs(CollectionService:GetTagged("WaveMinion")) do
-        if npc:IsDescendantOf(workspace) then
-            local mHum = npc:FindFirstChildOfClass("Humanoid")
-            local mHrp = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
-            if mHum and mHum.Health > 0 and mHrp then
-                local d = (mHrp.Position - cHrp.Position).Magnitude
-                if d < minDist then target, minDist = mHrp, d end
+    if S.AutoFarm or S.AutoDefend or S.AutoSlap then
+        local char2,hrp2,hum2 = getChar()
+        if not char2 or not hrp2 or not hum2 then return end
+        local _, corniPart = findCornifer()
+        local minions = getMinions()
+        if #minions == 0 then
+            releaseCombatHold()
+            if (S.AutoDefend or S.AutoFarm) and corniPart then
+                moveOnce(corniPart,CFrame.new(corniPart.Position + Vector3.new(0, 5, 0)),5)
+            end
+            return
+        end
+        local target, best = nil, math.huge
+        for _, m in ipairs(minions) do
+            if S.AutoDefend and corniPart then
+                local d = (m.pos - corniPart.Position).Magnitude
+                if d <= 60 and d < best then best = d; target = m end
+            else
+                local d = (m.pos - hrp2.Position).Magnitude
+                if d < best then best = d; target = m end
             end
         end
-    end
-
-    if target then
-        hrp.CFrame = target.CFrame * CFrame.new(0, 8, 0)
-        task.wait(0.05)
-        slapOnce(char, target)
-        task.wait(0.25)
-    else
-        if (hrp.Position - cHrp.Position).Magnitude > 30 then
-            hrp.CFrame = cHrp.CFrame * CFrame.new(0, 5, 10)
+        if not target and S.AutoFarm then
+            for _, m in ipairs(minions) do
+                local d = (m.pos - hrp2.Position).Magnitude
+                if d < best then best = d; target = m end
+            end
         end
-        task.wait(0.25)
+        if target then slapTarget(target) end
     end
 end
 
--- FIXED: search whole model + workspace fallback for prompt
-local function collectSoulCandy(hrp)
-    local soul = workspace:FindFirstChild("SoulCandy", true)
-    if not soul then return false end
-
-    local target
-    if soul:IsA("BasePart") then
-        target = soul
-    elseif soul:IsA("Model") then
-        target = soul.PrimaryPart or soul:FindFirstChildWhichIsA("BasePart")
-    end
-    if not target then return false end
-
-    hrp.CFrame = target.CFrame * CFrame.new(0, 3, 0)
-    task.wait(0.3)
-
-    -- Search entire SoulCandy for a prompt
-    local prompt = soul:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if not prompt then
-        -- Fallback: any nearby prompt
-        for _, p in ipairs(workspace:GetDescendants()) do
-            if p:IsA("ProximityPrompt") and p.Enabled then
-                local pPart = p.Parent
-                if pPart and pPart:IsA("BasePart")
-                    and (pPart.Position - target.Position).Magnitude < 15 then
-                    prompt = p
-                    break
-                end
-            end
-        end
-    end
-    if prompt then triggerPrompt(prompt) end
-    task.wait(0.6)
-    return true
-end
-
--- NEW: try to feed Cornifier the SoulCandy (Feed prompt)
-local function feedCornifier(hrp)
-    local _, cHrp = getCornifier()
-    if not cHrp then return false end
-
-    -- Look for a "Feed" prompt near Cornifier
-    local feedPrompt
-    for _, p in ipairs(workspace:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.Enabled
-            and p.ActionText and p.ActionText:lower():find("feed") then
-            local pPart = p.Parent
-            if pPart and pPart:IsA("BasePart")
-                and (pPart.Position - cHrp.Position).Magnitude < 25 then
-                feedPrompt = p
-                break
-            end
-        end
-    end
-
-    if not feedPrompt then return false end
-    hrp.CFrame = cHrp.CFrame * CFrame.new(0, 3, 8)
-    task.wait(0.3)
-    triggerPrompt(feedPrompt)
-    task.wait(1)
-    return true
-end
-
--- FIXED: specific glove name + safe fallback
-local function tryRetrieveGlove(hrp)
-    local SPECIFIC_NAMES = { "RevenantGlove", "Revenant", "Glove" }
-
-    local candidates = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            for _, name in ipairs(SPECIFIC_NAMES) do
-                if obj.Name == name then
-                    table.insert(candidates, obj)
-                    break
-                end
-            end
-        end
-    end
-
-    local endSeq = workspace:FindFirstChild("EndSequence")
-    if endSeq then
-        for _, obj in ipairs(endSeq:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                for _, name in ipairs(SPECIFIC_NAMES) do
-                    if obj.Name == name then
-                        table.insert(candidates, obj)
-                        break
-                    end
-                end
-            end
-        end
-    end
-
-    if #candidates > 0 then
-        local t = candidates[1]
-        hrp.CFrame = t.CFrame * CFrame.new(0, 3, 0)
-        task.wait(0.4)
-        local prompt = t:FindFirstChildWhichIsA("ProximityPrompt", true)
-            or (t.Parent and t.Parent:FindFirstChildWhichIsA("ProximityPrompt", true))
-        if prompt then
-            triggerPrompt(prompt)
-            task.wait(1.5)
-            return true
-        end
-    end
-
-    -- Fallback: any prompt NOT on a Door or DropZone
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled then
-            local model = obj:FindFirstAncestorOfClass("Model")
-            local isDoor = model and model:HasTag("Door")
-            local isDropZone = model and model:HasTag("DropZone")
-            if not isDoor and not isDropZone then
-                local basePart = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart"))
-                if basePart then
-                    hrp.CFrame = basePart.CFrame * CFrame.new(0, 3, 0)
-                    task.wait(0.4)
-                    triggerPrompt(obj)
-                    task.wait(1.5)
-                    return true
-                end
-            end
-        end
-    end
-
-    return false
-end
-
--- ==========================================
--- 🚜 AUTO FARM MASTER LOOP (fixed ordering & timing)
--- ==========================================
 task.spawn(function()
-    while task.wait(0.3) do
-        local active = States.Auto or States.AutoFarm
-        if not active then
-            currentPhase = "Idle"
-            continue
+    while sg.Parent do
+        activeAutoToken=nil
+        local ok,err=pcall(runMainTick)
+        activeAutoToken=nil
+        if not ok then
+            setStatus("waiting: retrying current action")
+            warn("[Revant Farmer] "..tostring(err))
         end
-
-        -- Already completed this session
-        if gameCompleted then
-            currentPhase = "COMPLETE ✓"
-            task.wait(2)
-            continue
-        end
-
-        -- ============================================
-        -- Place detection
-        -- ============================================
-        if isInObtainmentPlace() then
-            everInObtainment = true
-        elseif isInMainPlace() then
-            if everInObtainment then
-                -- Sent back to main = event finished (badge obtained)
-                gameCompleted = true
-                currentPhase = "COMPLETE — Badge Obtained!"
-                States.Auto = false
-                States.AutoFarm = false
-                States.AutoSkipDialogue = false
-                States.SpeedHack = false
-                States.Noclip = false
-                pcall(function() if autoToggle     then autoToggle:Set(false)     end end)
-                pcall(function() if autoFarmToggle then autoFarmToggle:Set(false) end end)
-                notify({
-                    Title = "Revant Glove Farmer",
-                    Content = "✓ Badge obtained! Auto disabled.",
-                    Duration = 10,
-                })
-                task.wait(2)
-                continue
-            else
-                -- Not yet in event → teleport
-                currentPhase = "Teleporting to Event"
-                if tick() - lastTeleportAttempt > 10 then
-                    lastTeleportAttempt = tick()
-                    teleportToObtainment()
-                end
-                task.wait(1)
-                continue
-            end
-        else
-            currentPhase = "Unknown Place — waiting"
-            task.wait(1)
-            continue
-        end
-
-        -- ============================================
-        -- Character check
-        -- ============================================
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not (char and char:FindFirstChild("HumanoidRootPart") and hum and hum.Health > 0) then
-            currentPhase = "Waiting for Character"
-            task.wait(0.5)
-            continue
-        end
-
-        local hrp = char.HumanoidRootPart
-        local round = workspace:GetAttribute("Round") or 1
-        local deposited = workspace:GetAttribute("DepositedCandy") or 0
-        local waveStarted = workspace:GetAttribute("WaveStarted") == true
-        local finalStarted = workspace:GetAttribute("FinalStarted") == true
-        local finalEating = workspace:GetAttribute("FinalEating") == true
-        local dialogueOpen = workspace:GetAttribute("DialogueOpen") == true
-        local gameStarted = workspace:GetAttribute("GameStarted") == true
-        local soulCandy = workspace:GetAttribute("SoulCandyCollected") == true
-        local activeTransition = workspace:GetAttribute("ActiveTransition")
-
-        -- ============================================
-        -- END SEQUENCE (glove drop) — check FIRST but
-        -- only act after the transition has finished
-        -- ============================================
-        local endSeq = workspace:FindFirstChild("EndSequence")
-        if endSeq and endSeq:GetAttribute("MapHiddenAt") then
-            reachedEndSequence = true
-            if activeTransition == "EndSequence" then
-                currentPhase = "End Sequence — Camera Locked"
-                task.wait(1)
-                continue
-            end
-            currentPhase = "Retrieving Glove"
-            tryRetrieveGlove(hrp)
-            task.wait(0.5)
-            continue
-        end
-
-        -- ============================================
-        -- DIALOGUE (check BEFORE gameStarted to
-        -- prevent Cornifier spam)
-        -- ============================================
-        if dialogueOpen then
-            currentPhase = "Dialogue"
-            task.wait(0.3)
-            continue
-        end
-
-        -- ============================================
-        -- GAME NOT STARTED → talk to Cornifier
-        -- ============================================
-        if not gameStarted then
-            currentPhase = "Starting Game"
-            if tick() - lastTalkAttempt > 2 then
-                lastTalkAttempt = tick()
-                talkToCornifier(char, hrp)
-            end
-            task.wait(0.5)
-            continue
-        end
-
-        -- ============================================
-        -- FINAL EATING → defend urgently
-        -- ============================================
-        if finalEating then
-            currentPhase = "FINAL DEFENSE"
-            defendWave(char, hrp)
-            continue
-        end
-
-        -- ============================================
-        -- REGULAR WAVE → defend
-        -- ============================================
-        if waveStarted then
-            currentPhase = "Defending Wave"
-            defendWave(char, hrp)
-            continue
-        end
-
-        -- ============================================
-        -- FINAL PHASE (not yet eating) → soul candy
-        -- ============================================
-        if finalStarted then
-            if not soulCandy then
-                -- Try to collect SoulCandy from world
-                local soulObj = workspace:FindFirstChild("SoulCandy", true)
-                if soulObj then
-                    currentPhase = "Collect Soul Candy"
-                    collectSoulCandy(hrp)
-                else
-                    -- Fallback: try feeding (in case soul is already held)
-                    currentPhase = "Find Feed Prompt"
-                    if not feedCornifier(hrp) then
-                        task.wait(0.5)
-                    end
-                end
-            else
-                -- Soul candy collected → feed Cornifier
-                currentPhase = "Feed Cornifier"
-                if not feedCornifier(hrp) then
-                    task.wait(0.5)
-                end
-            end
-            continue
-        end
-
-        -- ============================================
-        -- QUOTA REACHED → vote to start
-        -- ============================================
-        local quota = ROUND_CANDY[round] or 4999
-        if deposited >= quota then
-            currentPhase = "Voting to Start Wave"
-            if tick() - lastVoteTime > 3 then
-                lastVoteTime = tick()
-                depositCandy(hrp)
-            else
-                task.wait(0.4)
-            end
-            continue
-        end
-
-        -- ============================================
-        -- BAG FULL → deposit
-        -- ============================================
-        local bagSize = getBagSize()
-        local myCandy = char:GetAttribute("CollectedCandy") or 0
-        if myCandy >= bagSize then
-            currentPhase = "Depositing Candy"
-            depositCandy(hrp)
-            continue
-        end
-
-        -- ============================================
-        -- ELSE → farm candy
-        -- ============================================
-        currentPhase = "Farming Candy"
-        farmCandies(char, hrp)
+        task.wait(Settings.LoopDelay)
     end
 end)
 
--- ==========================================
--- 📢 STARTUP
--- ==========================================
-notify({
-    Title = "Revant Glove Farmer",
-    Content = "Loaded — Made by DerpBot. Enable AUTO in Home tab.",
-    Duration = 6,
-})
-
-print("[Revant Glove Farmer] Loaded — Made by DerpBot")
+-- ==================== MOVEMENT AND CLEANUP ====================
+local savedSpeed=setmetatable({}, {__mode="k"})
+local savedCollisions=setmetatable({}, {__mode="k"})
+local function restoreMovement()
+    for hum,speed in pairs(savedSpeed) do
+        if hum.Parent then hum.WalkSpeed=speed end
+        savedSpeed[hum]=nil
+    end
+    for part,collidable in pairs(savedCollisions) do
+        if part.Parent then part.CanCollide=collidable end
+        savedCollisions[part]=nil
+    end
+end
+local speedConn=RunService.Heartbeat:Connect(function()
+    if not sg.Parent then return end
+    local _,_,hum=getChar()
+    if S.SpeedHack and hum then
+        if savedSpeed[hum]==nil then savedSpeed[hum]=hum.WalkSpeed end
+        hum.WalkSpeed=Settings.WalkSpeed
+    elseif not S.SpeedHack then
+        for h,speed in pairs(savedSpeed) do
+            if h.Parent then h.WalkSpeed=speed end
+            savedSpeed[h]=nil
+        end
+    end
+end)
+local noclipConn=RunService.Stepped:Connect(function()
+    if not sg.Parent then return end
+    local char=LocalPlayer.Character
+    if S.Noclip and char then
+        for _,part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if savedCollisions[part]==nil then savedCollisions[part]=part.CanCollide end
+                part.CanCollide=false
+            end
+        end
+    elseif not S.Noclip then
+        for part,value in pairs(savedCollisions) do
+            if part.Parent then part.CanCollide=value end
+            savedCollisions[part]=nil
+        end
+    end
+end)
+sg.Destroying:Connect(function()
+    if releaseCombatHold then releaseCombatHold() end
+    if Helpers.releaseEndingHold then Helpers.releaseEndingHold() end
+    speedConn:Disconnect(); noclipConn:Disconnect()
+    retryConn:Disconnect(); statsConn:Disconnect()
+    healthCharConn:Disconnect(); safetyConn:Disconnect()
+    for _,conn in ipairs(sliderConnections) do conn:Disconnect() end
+    if healthConn then healthConn:Disconnect() end
+    if maxHealthConn then maxHealthConn:Disconnect() end
+    for _,conn in ipairs(dialogueConnections) do conn:Disconnect() end
+    if Helpers.dialogueAddedConn then Helpers.dialogueAddedConn:Disconnect() end
+    if Helpers.housePromptAddedConn then Helpers.housePromptAddedConn:Disconnect() end
+    if Helpers.activeHouseVisit then Helpers.activeHouseVisit.active=false; Helpers.activeHouseVisit=nil end
+    dragEndConn:Disconnect(); dragBeginConn:Disconnect(); dragMoveConn:Disconnect()
+    restoreMovement()
+end)
+print("[Revant Farmer] Dashboard loaded.")
