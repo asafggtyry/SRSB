@@ -1,0 +1,405 @@
+--[[
+    ╔═══════════════════════════════════════════════════════════╗
+    ║       CANDY + SLAPPLE FARMER  (Frosted Dashboard)         ║
+    ║       Simplified shell + farms + server hop selector      ║
+    ╚═══════════════════════════════════════════════════════════╝
+    Q = stop all farms.
+]]
+
+local Players          = game:GetService("Players")
+local LocalPlayer      = Players.LocalPlayer
+local PlayerGui        = LocalPlayer:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local TeleportService  = game:GetService("TeleportService")
+local HttpService      = game:GetService("HttpService")
+
+local existing = PlayerGui:FindFirstChild("CandySlappleFarmer")
+if existing then existing:Destroy() end
+
+-- === Colors (Frosted palette) ===
+local C = {
+    window = Color3.fromRGB(90,88,85),  panel  = Color3.fromRGB(108,107,103),
+    text   = Color3.fromRGB(255,255,241), muted = Color3.fromRGB(219,218,208),
+    border = Color3.fromRGB(255,255,239), purple = Color3.fromRGB(251,253,225),
+    green  = Color3.fromRGB(225,235,195), danger = Color3.fromRGB(84,77,73),
+    warn   = Color3.fromRGB(245,235,194),
+}
+local ink = Color3.fromRGB(48,48,43)
+
+-- === Visual helpers ===
+local function corner(p, r)
+    local o = Instance.new("UICorner"); o.CornerRadius = UDim.new(0, r or 20); o.Parent = p
+end
+local function stroke(p, t)
+    local o = Instance.new("UIStroke"); o.Color = C.border; o.Transparency = t or .76
+    o.Thickness = 1; o.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; o.Parent = p; return o
+end
+local function frame(p, x, y, w, h, color, transparency, r)
+    local o = Instance.new("Frame"); o.Position = UDim2.fromOffset(x, y); o.Size = UDim2.fromOffset(w, h)
+    o.BackgroundColor3 = color or C.panel; o.BackgroundTransparency = transparency or 0
+    o.BorderSizePixel = 0; o.Parent = p; if r then corner(o, r) end; return o
+end
+local function text(p, value, x, y, w, h, size, color, font)
+    local o = Instance.new("TextLabel"); o.Position = UDim2.fromOffset(x, y); o.Size = UDim2.fromOffset(w, h)
+    o.BackgroundTransparency = 1; o.Text = value; o.TextColor3 = color or C.text
+    o.TextSize = size or 14; o.Font = font or Enum.Font.Gotham; o.TextXAlignment = Enum.TextXAlignment.Left
+    o.TextTruncate = Enum.TextTruncate.AtEnd; o.Parent = p; return o
+end
+local function button(p, value, x, y, w, h, filled)
+    local o = Instance.new("TextButton"); o.Position = UDim2.fromOffset(x, y); o.Size = UDim2.fromOffset(w, h)
+    o.BackgroundColor3 = filled and C.purple or C.panel; o.BackgroundTransparency = filled and .02 or .68
+    o.Text = value; o.TextColor3 = filled and ink or C.text; o.TextSize = 13; o.Font = Enum.Font.GothamMedium
+    o.BorderSizePixel = 0; o.AutoButtonColor = false; o.Parent = p; corner(o, h/2); stroke(o, filled and .9 or .5)
+    o.MouseEnter:Connect(function()
+        TweenService:Create(o, TweenInfo.new(.16), { BackgroundTransparency = filled and 0 or .4 }):Play()
+    end)
+    o.MouseLeave:Connect(function()
+        TweenService:Create(o, TweenInfo.new(.16), { BackgroundTransparency = filled and .02 or .68 }):Play()
+    end)
+    return o
+end
+local function sheen(p, amount)
+    local g = Instance.new("UIGradient"); g.Rotation = 75
+    g.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, amount or .38) })
+    g.Parent = p
+end
+
+-- === State ===
+local States = { FarmCandy = false, FarmSlapple = false }
+
+-- === Farm config ===
+local CANDY_FOLDER_NAME  = "CandyCorns"
+local ARENA_NAME         = "Arena"
+local ISLAND_NAME        = "island5"
+local SLAPPLE_FOLDER_NAME= "Slapples"
+local GLOVE_NAME         = "Glove"
+local FARM_INTERVAL      = 0.25
+
+local function getHRP()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+end
+local function findSlappleFolder()
+    local arena = workspace:FindFirstChild(ARENA_NAME)
+    if not arena then return nil end
+    local island = arena:FindFirstChild(ISLAND_NAME)
+    if not island then return nil end
+    return island:FindFirstChild(SLAPPLE_FOLDER_NAME)
+end
+local function findAllPartsByName(container, name)
+    local results = {}
+    if not container then return results end
+    local function search(inst)
+        for _, child in ipairs(inst:GetChildren()) do
+            if child:IsA("BasePart") and child.Name == name then
+                table.insert(results, child)
+            end
+            if child:IsA("Folder") or child:IsA("Model") then
+                search(child)
+            end
+        end
+    end
+    pcall(search, container)
+    return results
+end
+
+-- === Farm loop ===
+task.spawn(function()
+    while true do
+        if not (States.FarmCandy or States.FarmSlapple) then
+            task.wait(0.1)
+        else
+            local hrp = getHRP()
+            if hrp then
+                if States.FarmCandy then
+                    local candyFolder = workspace:FindFirstChild(CANDY_FOLDER_NAME)
+                    if candyFolder then
+                        for _, candy in pairs(candyFolder:GetChildren()) do
+                            if candy.Parent and candy:IsA("BasePart") then
+                                pcall(function() candy.CFrame = hrp.CFrame end)
+                            end
+                        end
+                    end
+                end
+                if States.FarmSlapple then
+                    local sf = findSlappleFolder()
+                    if sf then
+                        for _, glove in ipairs(findAllPartsByName(sf, GLOVE_NAME)) do
+                            if glove.Parent then
+                                pcall(function() glove.CFrame = hrp.CFrame end)
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(FARM_INTERVAL)
+        end
+    end
+end)
+
+-- === GUI ===
+local W, H = 660, 430
+local sg = Instance.new("ScreenGui")
+sg.Name = "CandySlappleFarmer"
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.DisplayOrder = 30
+sg.Parent = PlayerGui
+
+local mf = frame(sg, 0, 0, W, H, C.window, .48, 38)
+mf.AnchorPoint = Vector2.new(.5, .5)
+mf.Position = UDim2.fromScale(.5, .5)
+mf.Active = true
+mf.ClipsDescendants = true
+stroke(mf, .42)
+sheen(mf, .28)
+
+local uiScale = Instance.new("UIScale"); uiScale.Parent = mf
+local function fitWindow()
+    local size = sg.AbsoluteSize
+    uiScale.Scale = math.min(1, math.max(.1, (size.X-44)/W), math.max(.1, (size.Y-44)/H))
+end
+sg:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitWindow); fitWindow()
+
+-- === Top bar ===
+local tb = frame(mf, 0, 0, W, 84, C.window, 1)
+text(tb, "Candy + Slapple", 24, 18, 220, 26, 20, C.text, Enum.Font.GothamMedium)
+text(tb, "Farmer",          24, 46, 220, 26, 20, C.text, Enum.Font.GothamMedium)
+
+local nav = frame(tb, 260, 25, 268, 44, C.panel, .56, 24); stroke(nav, .76); sheen(nav, .36)
+local navButtons = {}
+for i, name in ipairs({ "Farms", "Server Hop" }) do
+    local bw = i == 1 and 100 or 154
+    local bx = i == 1 and 5 or 110
+    navButtons[name] = button(nav, name, bx, 4, bw, 36, i == 1)
+end
+
+local clsB = button(tb, "×", W-46, 29, 30, 30, false)
+clsB.MouseButton1Click:Connect(function() sg:Destroy() end)
+
+local body = frame(mf, 0, 84, W, H-84, C.panel, 1)
+
+-- === Pages ===
+local pages = {
+    Farms        = frame(body, 0, 0, W, H-84, C.panel, 1),
+    ["Server Hop"] = frame(body, 0, 0, W, H-84, C.panel, 1),
+}
+local function showPage(name)
+    for key, page in pairs(pages) do page.Visible = key == name end
+    for key, b in pairs(navButtons) do
+        local chosen = key == name
+        b.BackgroundColor3 = chosen and C.purple or C.panel
+        b.BackgroundTransparency = chosen and .02 or 1
+        b.TextColor3 = chosen and ink or C.text
+    end
+end
+for name, b in pairs(navButtons) do b.MouseButton1Click:Connect(function() showPage(name) end) end
+
+-- ==========================================
+-- FARMS PAGE
+-- ==========================================
+text(pages.Farms, "Farm Controls", 36, 20, 400, 30, 20, C.text, Enum.Font.GothamMedium)
+text(pages.Farms, "Click a card to toggle. Press Q to stop all.", 36, 52, 500, 20, 12, C.muted)
+
+local farmStatus = text(pages.Farms, "Both farms off", 36, (H-84)-50, W-72, 22, 13, C.muted)
+
+local farmButtons = {}
+local function makeFarmCard(x, title, key, desc)
+    local card = frame(pages.Farms, x, 90, 280, 190, Color3.fromRGB(62,62,58), .55, 24); stroke(card, .9)
+
+    text(card, title, 20, 20, 240, 30, 18, C.text, Enum.Font.GothamMedium)
+    text(card, desc,  20, 55, 240, 20, 12, C.muted)
+
+    local statusBig = text(card, "OFF", 20, 90, 240, 50, 34, C.muted)
+    local bar  = frame(card, 20, 158, 240, 6, C.text, .8, 3)
+    local fill = frame(bar, 0, 0, 0, 6, C.purple, 0, 3); fill.Size = UDim2.fromScale(0, 1)
+
+    local click = Instance.new("TextButton")
+    click.Size = UDim2.fromScale(1, 1)
+    click.BackgroundTransparency = 1
+    click.Text = ""
+    click.Parent = card
+
+    local function refreshCard()
+        if States[key] then
+            statusBig.Text = "ON"; statusBig.TextColor3 = ink
+            card.BackgroundColor3 = C.purple; card.BackgroundTransparency = .1
+            fill.Size = UDim2.fromScale(1, 1)
+        else
+            statusBig.Text = "OFF"; statusBig.TextColor3 = C.muted
+            card.BackgroundColor3 = Color3.fromRGB(62,62,58); card.BackgroundTransparency = .55
+            fill.Size = UDim2.fromScale(0, 1)
+        end
+    end
+
+    click.MouseButton1Click:Connect(function()
+        States[key] = not States[key]
+        refreshCard()
+        if States.FarmCandy and States.FarmSlapple then
+            farmStatus.Text = "Both farms running"
+        elseif States.FarmCandy then
+            farmStatus.Text = "Candy Corn farm running"
+        elseif States.FarmSlapple then
+            farmStatus.Text = "Slapple farm running"
+        else
+            farmStatus.Text = "Both farms off"
+        end
+    end)
+    refreshCard()
+    farmButtons[key] = refreshCard
+end
+
+makeFarmCard(36,  "Candy Corn", "FarmCandy",    "Pull all CandyCorns to you")
+makeFarmCard(344, "Slapple",    "FarmSlapple",  "Pull Arena > island5 Gloves to you")
+
+-- ==========================================
+-- SERVER HOP PAGE
+-- ==========================================
+text(pages["Server Hop"], "Server Hop", 36, 20, 400, 30, 20, C.text, Enum.Font.GothamMedium)
+text(pages["Server Hop"], "Pick a mode, then hop. Re-run script after teleport.", 36, 52, 600, 20, 12, C.muted)
+
+local hopModes = { "Fewest Players", "Most Players", "Random" }
+local hopIndex = 1
+
+local modeCard = frame(pages["Server Hop"], 36, 90, W-72, 90, Color3.fromRGB(62,62,58), .55, 24); stroke(modeCard, .9)
+text(modeCard, "Hop mode", 20, 14, 200, 20, 12, C.muted)
+local modeLbl = text(modeCard, hopModes[hopIndex], 20, 38, W-72-140, 40, 24, C.text, Enum.Font.GothamMedium)
+
+local cycleB = button(modeCard, "Change", W-72-120, 55, 100, 26, false)
+cycleB.MouseButton1Click:Connect(function()
+    hopIndex = hopIndex % #hopModes + 1
+    modeLbl.Text = hopModes[hopIndex]
+end)
+
+local infoCard = frame(pages["Server Hop"], 36, 196, W-72, 80, Color3.fromRGB(62,62,58), .6, 24); stroke(infoCard, .9)
+text(infoCard, "Current server", 20, 14, 200, 20, 12, C.muted)
+text(infoCard, "Job ID: " .. game.JobId:sub(1, 8) .. "...", 20, 36, W-72-40, 22, 13, C.text)
+local playerCountLbl = text(infoCard, "Players: " .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers, 20, 56, W-72-40, 18, 11, C.muted)
+
+task.spawn(function()
+    while sg.Parent do
+        task.wait(1)
+        pcall(function()
+            playerCountLbl.Text = "Players: " .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers
+        end)
+    end
+end)
+
+local hopStatus = text(pages["Server Hop"], "Ready.", 36, (H-84)-84, W-72, 22, 12, C.muted)
+local hopBtn = button(pages["Server Hop"], "HOP NOW", 36, (H-84)-56, W-72, 40, true)
+hopBtn.TextSize = 15; hopBtn.Font = Enum.Font.GothamBold
+
+local function doServerHop()
+    local mode = hopModes[hopIndex]
+    hopStatus.Text = "Searching servers (" .. mode .. ")..."
+    hopBtn.Text = "HOPPING..."
+    hopBtn.BackgroundTransparency = .4
+
+    task.spawn(function()
+        local placeId = game.PlaceId
+        local currentJobId = game.JobId
+        local servers, cursor = {}, ""
+
+        for _ = 1, 3 do
+            local url = string.format(
+                "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100%s",
+                placeId, cursor ~= "" and ("&cursor=" .. cursor) or ""
+            )
+            local ok, res = pcall(function() return game:HttpGet(url) end)
+            if not ok or not res then break end
+            local ok2, data = pcall(function() return HttpService:JSONDecode(res) end)
+            if not ok2 or not data or not data.data then break end
+            for _, s in ipairs(data.data) do
+                if s.id ~= currentJobId and s.playing < s.maxPlayers and s.playing > 0 then
+                    table.insert(servers, s)
+                end
+            end
+            if #servers >= 15 or not data.nextPageCursor then break end
+            cursor = data.nextPageCursor
+        end
+
+        if #servers == 0 then
+            hopStatus.Text = "No servers found — rejoin fallback..."
+            pcall(function() TeleportService:Teleport(placeId, LocalPlayer) end)
+            return
+        end
+
+        local chosen
+        if mode == "Fewest Players" then
+            table.sort(servers, function(a,b) return a.playing < b.playing end)
+            chosen = servers[1]
+        elseif mode == "Most Players" then
+            table.sort(servers, function(a,b) return a.playing > b.playing end)
+            chosen = servers[1]
+        else
+            chosen = servers[math.random(1, #servers)]
+        end
+
+        hopStatus.Text = string.format("Hopping to %d/%d server...", chosen.playing, chosen.maxPlayers)
+
+        local okTele = pcall(function()
+            local opts = Instance.new("TeleportOptions")
+            opts.ServerInstanceId = chosen.id
+            TeleportService:TeleportAsync(placeId, { LocalPlayer }, opts)
+        end)
+        if not okTele then
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(placeId, chosen.id, LocalPlayer)
+            end)
+        end
+    end)
+end
+hopBtn.MouseButton1Click:Connect(doServerHop)
+
+-- ==========================================
+-- Q = STOP ALL
+-- ==========================================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        if States.FarmCandy or States.FarmSlapple then
+            States.FarmCandy = false
+            States.FarmSlapple = false
+            for _, refresh in pairs(farmButtons) do refresh() end
+            farmStatus.Text = "Stopped via Q"
+        end
+    end
+end)
+
+-- ==========================================
+-- DRAG
+-- ==========================================
+local drag, ds, sp, dragInput
+local function onWindow(point)
+    local over = false
+    for _, obj in ipairs(PlayerGui:GetGuiObjectsAtPosition(point.X, point.Y)) do
+        if obj:IsDescendantOf(mf) then
+            over = true
+            local node = obj
+            while node and node ~= mf do
+                if node:IsA("GuiButton") or node:IsA("TextBox") or node:IsA("ScrollingFrame") then return false end
+                node = node.Parent
+            end
+        end
+    end
+    return over
+end
+UserInputService.InputBegan:Connect(function(input)
+    if drag or (input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch) then return end
+    if not sg.Parent or not onWindow(input.Position) then return end
+    drag = true; ds = input.Position; sp = mf.Position; dragInput = input
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if not drag then return end
+    if input ~= dragInput and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+    local d = input.Position - ds
+    mf.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input == dragInput then drag = false; dragInput = nil end
+end)
+
+showPage("Farms")
+print("[Candy+Slapple Farmer] Loaded — Q to stop all.")
